@@ -51,7 +51,7 @@ markerGenes <- c(
 )
 
 heatmapGS <- plotMarkerHeatmap(
-	seMarker = markersGS,
+	seMarker = markerGS,
 	cutOff = "FDR <= 0.01 & Log2FC >= 1.25",
 	labelMarkers = markerGenes,
 	transpose = TRUE
