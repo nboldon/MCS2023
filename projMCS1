@@ -1,1 +1,105 @@
+addArchRGenome("mm10")
+addArchRThreads(threads = 8)
+
+inputFiles <- list.files("D:/MCS2023", pattern="*fragments.tsv.gz$")
+namesFiles <- gsub("*fragments.tsv.gz", "", inputFiles)
+
+ArrowFiles <- createArrowFiles(
+	inputFiles = inputFiles,
+	sampleNames = namesFiles,
+	minTSS = 7,
+	minFrags = 1000,
+	addTileMat = TRUE,
+	addGeneScoreMat = TRUE,
+	bcTag = 'CB'
+)
+
+#Create Project 1
+
+ArrowFiles <- list.files("D:/MCS2023", pattern=".arrow$")
+ArrowFiles
+
+projMCS1 <- ArchRProject(
+	ArrowFiles = ArrowFiles,
+	outputDirectory = "D:/MCS2023",
+	copyArrows = FALSE
+	)
+
+#Add Doublet Scores
+projMCS1 <- addDoubletScores(
+	input = projMCS1,
+	k = 10, #Refers to how many cells near a "pseudo-doublet" to count
+	knnMethod = "UMAP", #Refers to the embedding to use for nearest neighbor search with doublet projection
+	LSIMethod = 1
+	)
+
+#Plot QC metrics: Log10(Unique Fragments) vs TSS enrichment score
+df <- getCellColData(projMCS1, select = c("log10(nFrags)", "TSSEnrichment"))
+df
+
+#Plot the Log10(Unique Fragments) by TSS enrichment score to identify high quality cells
+p <- ggPoint(
+	x = df[,1],
+	y = df[,2],
+	colorDensity = TRUE,
+	continuousSet = "sambaNight",
+	xlabel = "Log10 Unique Fragments",
+	ylabel = "TSS Enrichment",
+	xlim = c(log10(500), quantile(df[,1], probs = 0.99)),
+	ylim = c(0, quantile(df[,2], probs = 0.99))
+) + geom_hline(yintercept = 4, lty = "dashed") + geom_vline(xintercept = 3, lty = "dashed")
+p
+
+#To save an editable vectorized version of the plot
+plotPDF(p, name = "TSS-vs-Frags.pdf", ArchRProj = projMCS1, addDOC = FALSE)
+
+#Create ridge plots for each sample using TSS enrichment scores
+p1 <- plotGroups(
+	ArchRProj = projMCS1, 
+	groupBy = "Sample",
+	colorBy = "cellColData",
+	name = "TSSEnrichment",
+	plotAs = "ridges"
+	)
+p1
+
+#Create violin plots for each sample using TSS enrichment scores
+p2 <- plotGroups(
+	ArchRProj = projMCS1,
+	groupBy = "Sample",
+	colorBy = "cellColData",
+	name = "TSSEnrichment",
+	plotAs = "violin",
+	alpha = 0.4,
+	addBoxPlot = TRUE
+	)
+p2
+
+#Create ridge plots for each sample using log10(Unique Fragments)
+p3 <- plotGroups(
+	ArchRProj = projMCS1,
+	groupBy = "Sample",
+	colorBy = "cellColData",
+	name = "log10(nFrags)",
+	plotAs = "ridges"
+	)
+p3
+
+#Create violin plots for each sample using log10(Unique Fragments)
+p4 <- plotGroups(
+	ArchRProj = projMCS1,
+	groupBy = "Sample",
+	colorBy = "cellColData",
+	name = "log10(nFrags)",
+	plotAs = "violin",
+	alpha = 0.4,
+	addBoxPlot = TRUE
+	)
+p4
+
+#Save editable vectorized versions of the plots
+plotPDF(p1,p2,p3,p4, name = "TSS7_QC-MCS1.pdf", ArchRProj = projMCS1, addDOC = FALSE, width = 8, height = 8)
+
+#Save the ArchRProject
+saveArchRProject(ArchRProj = projMCS2, outputDirectory = "D:/MCS2023", load = FALSE)
 
