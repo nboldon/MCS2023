@@ -1,5 +1,14 @@
 # MCS2023
 
+Libraries:
+library(ArchR)
+library(org.Mm.eg.db)
+library(BiocManager)
+library(AnnotationDbi)
+library(clusterProfiler)
+library(enrichplot)
+library(pheatmap)
+
 Follow the following code scripts to setup the project:
 
 projMCS1
