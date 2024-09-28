@@ -11,18 +11,18 @@ library(clusterProfiler)
 library(enrichplot)
 library(pheatmap)
 
-# Conda_Update_Dec2023
+## Conda_Update_Dec2023
 Updated Beartooth conda environment for interactive session
 
-# environment_2024-02-16.yml
+## environment_2024-02-16.yml
 Beartooth conda computing environment
 
 
 
-## The following code scripts are used to complete the project:
+# The following code scripts are used to complete the project:
 
 
-# Demultiplex code
+## Demultiplex code
 
 Custom code from Qi Sun at Cornell University
 
@@ -46,22 +46,22 @@ bedConvert.py
 
 
 
-# cellrangerRun.sh
+## cellrangerRun.sh
 
 Slurm script to create Cellranger files
 
 
-# Rename_FragFiles.R
+## Rename_FragFiles.R
 
 Renames Cellranger files; can then be moved to new folder for downstream analysis
 
 
-# projMCS1_ArrowFiles.R
+## projMCS1_ArrowFiles.R
 
 Creates arrow files in ArchR for downstream analysis
 
 
-# projMCS1.R
+## projMCS1.R
 
 Add doublet scores
 
@@ -70,7 +70,7 @@ Create df for nFrags & TSS Enrichment
 Plot QC scores (Unique frags vs TSS Enrichment, Ridge & Violin plots for unique frags & TSS Enrichment)
 
 
-# projMCS2.R
+## projMCS2.R
 
 Filter doublets
 
@@ -84,7 +84,7 @@ Create cluster confusion matrix
 
 
 
-# projMCS2_scEmbeddings.R
+## projMCS2_scEmbeddings.R
 
 UMAP using LSI by sample & cluster
 
@@ -95,7 +95,7 @@ UMAP using Harmony by sample & cluster
 TSNE using Harmony by sample & cluster
 
 
-# projMCS2_MarkerGenes.R
+## projMCS2_MarkerGenes.R
 
 getMarkerFeatures
 
@@ -104,24 +104,24 @@ Marker list by cluster (FDR & Log2FC)
 Heatmaps for marker features; cowplots for all genes
 
 
-# projMCS2_ArchRBrowser.R
+## projMCS2_ArchRBrowser.R
 
 Track plotting with ArchRBrowser
 
 
-# projMCS3.R
+## projMCS3.R
 
 Defining cluster ID with scRNA-seq 
 
 Unable to complete; no RNA-seq data for cohort; study limitation
 
 
-# projMCS4.R
+## projMCS4.R
 
 Add reproduceable peak set using MACS2
 
 
-# projMCS5.R
+## projMCS5.R
 
 Add peak matrix
 
@@ -132,12 +132,12 @@ Plotting marker peaks
 Add motif annotations
 
 
-# projMCS5_cellAbundance.R
+## projMCS5_cellAbundance.R
 
 Cell abundance analysis
 
 
-# Cluster identification using specific gene markers
+## Cluster identification using specific gene markers
 projMCS5_ClusterID_UMAP.R
 projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
 projMCS5_Pairwise_byClusterTxGrp_2024-05-21.R
@@ -146,12 +146,12 @@ projMCS5_GeneMarkers_TxComp-byCluster_2024-04-29.R
 projMCS5_Zu-2023_geneMarker_UMAPs.R
 
 
-# projMCS5_ArchRBrowser.R
+## projMCS5_ArchRBrowser.R
 
 Additional browser track regions of interest
 
 
-# projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
+## projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
 
 
 
