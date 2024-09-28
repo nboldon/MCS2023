@@ -29,6 +29,11 @@ Custom code from Qi Sun at Cornell University
 Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
 
 
+# cellrangerRun.sh
+
+Slurm script to create Cellranger files
+
+
 # Rename_FragFiles.R
 
 Renames Cellranger files; can then be moved to new folder for downstream analysis
