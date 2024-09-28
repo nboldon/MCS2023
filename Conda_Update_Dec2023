@@ -1,0 +1,16 @@
+module load miniconda3/23.1.0
+
+conda create -n archr2023_12 -y # only run once
+
+conda activate archr2023_12
+
+conda install -c conda-forge r-base=4.3 --yes
+conda install r-xml --yes
+conda install -c conda-forge r-devtools -y
+conda install -c bioconda bioconductor-chromvar -y
+conda install -c conda-forge r-cairo -y
+
+R
+
+devtools::install_github("GreenleafLab/ArchR", ref="master", repos = BiocManager::repositories())
+# update packages prompt - all
