@@ -1,6 +1,11 @@
 # MCS2023
 
-Libraries:
+bedConvert.py
+# Custom code from Qi Sun at Cornell University
+# Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
+
+Libraries.R
+# Primary libraries:
 library(ArchR)
 library(org.Mm.eg.db)
 library(BiocManager)
@@ -48,6 +53,8 @@ projMCS5.R
 # Identify marker peaks by cluster, etc.
 # Plotting marker peaks
 # Add motif annotations
+
+projMCS5_cellAbundance.R
 
 
 
