@@ -1,11 +1,5 @@
 # MCS2023
 
-# bedConvert.py
-
-Custom code from Qi Sun at Cornell University
-
-Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
-
 
 # Libraries.R
 
@@ -20,7 +14,14 @@ library(pheatmap)
 
 
 
-# The following code scripts are used to setup the project:
+# The following code scripts are used to complete the project:
+
+
+# bedConvert.py
+
+Custom code from Qi Sun at Cornell University
+
+Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
 
 
 # projMCS1.R
