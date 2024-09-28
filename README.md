@@ -2,7 +2,6 @@
 
 
 # Libraries.R
-
 Primary libraries:
 library(ArchR)
 library(org.Mm.eg.db)
@@ -12,9 +11,15 @@ library(clusterProfiler)
 library(enrichplot)
 library(pheatmap)
 
+# Conda_Update_Dec2023
+Updated Beartooth conda environment for interactive session
+
+# environment_2024-02-16.yml
+Beartooth conda computing environment
 
 
-# The following code scripts are used to complete the project:
+
+## The following code scripts are used to complete the project:
 
 
 # bedConvert.py
@@ -22,6 +27,16 @@ library(pheatmap)
 Custom code from Qi Sun at Cornell University
 
 Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
+
+
+# Rename_FragFiles.R
+
+Renames Cellranger files; can then be moved to new folder for downstream analysis
+
+
+# projMCS1_ArrowFiles.R
+
+Creates arrow files in ArchR for downstream analysis
 
 
 # projMCS1.R
@@ -66,6 +81,9 @@ Marker list by cluster (FDR & Log2FC)
 
 Heatmaps for marker features; cowplots for all genes
 
+
+# projMCS2_ArchRBrowser.R
+
 Track plotting with ArchRBrowser
 
 
@@ -73,7 +91,7 @@ Track plotting with ArchRBrowser
 
 Defining cluster ID with scRNA-seq 
 
-Unable to complete; no RNA-seq data for cohort
+Unable to complete; no RNA-seq data for cohort; study limitation
 
 
 # projMCS4.R
@@ -93,6 +111,23 @@ Add motif annotations
 
 
 # projMCS5_cellAbundance.R
+
+Cell abundance analysis
+
+
+# projMCS5_ClusterID_UMAP.R
+
+Cluster identification using specific gene markers
+
+
+# projMCS5_ArchRBrowser.R
+
+Additional browser track regions of interest
+
+
+# projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
+
+
 
 
 
