@@ -1,0 +1,44 @@
+The script sciatac.py does two things:
+1. demultiplexing samples
+2. converting the lab custom barcodes into Cellranger 16bp barcodes (based on the Cellranger-atac whitelist file). 
+The cellranger-atac requires three fastq files:
+"sampleName_S1_L001_R1_001.fastq.gz"
+"sampleName_S1_L001_R2_001.fastq.gz"
+"sampleName_S1_L001_R3_001.fastq.gz"
+(R1 and R3 are paired end reads that can be aligned to the reference genome. R2 contains the 16bp cell barcodes.)
+
+
+Section 1. run sciatac.py to convert raw fastq data files to Cellranger-atac format 
+a. prepare the samplelist file
+See example file samplelist in the directory. It is a tab delimited text file with three columns: sampleName, bc1, bc2
+(Make sure there is no space or funky characters in the smaple names. If a sample uses multiple barcodes, use multiple lines for the sample.)
+
+b. run sciatac.py on a server with plenty of temporary storage (~2TB for ~100 billion read pairs), and >=20 cpu cores. If you are using a computer with less cpu, modify the scripts, set both "parallelSamples" and "parallelChunks" to number of CPUs. 
+
+sciatac.py -1 raw_fq_R1.gz -2 raw_R2.fq.gz -s samplelist  -o outputDirName
+
+(make sure that the file cratac_curated.txt.gz is located at the same directory as the script file sciatac.py)
+
+Section 2. run cellranger 
+#basic cellranger command
+cellranger-atac count --id=WT-8h_run \
+                        --reference=/workdir/qisun/refdata-cellranger-arc-mm10-2020-A-2.0.0 \
+                        --fastqs=/workdir/qisun/out/WT-8h \
+                        --sample=WT-8h \
+                        --localcores=32 \
+						--localmem=128
+ 
+#There is a script that can prepare the batch command file, where "-i" input directory set to the directory from previous command. It would create a batch script run.sh
+cellranger_commands.py -i outputDirName -r /workdir/qisun/refdata-cellranger-arc-mm10-2020-A-2.0.0 -o run.sh
+
+To run it on a large mem gen2 server (96 cores, and 500gb ram)
+parallel -j3 < run.sh
+
+
+Appendix. curate the cellranger barcode whitelist
+The curated barcode file "cratac_curated.txt.gz" must be kept in the same directory as the script. This file is from the cellranger software directory, located in cellranger-atac-2.1.0/lib/python/atac/barcodes
+
+The file 737K-cratac-v1.txt.gz must be scrambled before use
+zcat 737K-cratac-v1.txt.gz | shuf |gzip -c > newfile.txt.gz 
+
+After scrambling, the curated list was prepared with two scripts: get_uniqList1.py and get_uniqList2.py.  get_uniqList1.py prepare about ~30,000 barcodes with hamming distance <3,  get_uniqList2.py would scan the rest of post-shuf barcodes, and add extra barcodes in case more cell barcodes are needed.. 
