@@ -22,11 +22,28 @@ Beartooth conda computing environment
 ## The following code scripts are used to complete the project:
 
 
-# bedConvert.py
+# Demultiplex code
 
 Custom code from Qi Sun at Cornell University
 
 Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
+
+README_demultiplex
+
+sciatac.py
+
+get_uniqList1.py
+
+get_uniqList2.py
+
+cratac_curated.txt.gz
+
+cellranger)_commands.py
+
+samplelist
+
+bedConvert.py
+
 
 
 # cellrangerRun.sh
