@@ -179,7 +179,13 @@ Q5_GenotypeClusterComps_2024_06-28.R
 Q6_TvTbyClusterComps_2024-06-28.R
 
 
+## ProjMCS7 - Peak Matrix and motif analysis
 
+projMCS7.R
+
+normExp_projMCS7.R
+
+peakVSmatrix.R
 
 
 
