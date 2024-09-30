@@ -83,7 +83,6 @@ Add Clusters
 Create cluster confusion matrix
 
 
-
 ## projMCS2_scEmbeddings.R
 
 UMAP using LSI by sample & cluster
@@ -190,7 +189,12 @@ normExp_projMCS7.R
 peakVSmatrix.R
 
 
-# Cluster 18 Subset
+## ProjMCS9 - Peak & fragment count analysis
+
+projMCS9.R
+
+
+## Cluster 18 Subset
 
 C18_Subset.R
 
@@ -203,9 +207,7 @@ C18_TxComps_byCluster.R
 C18_T1-2-4v3_byCluster_2024-07-31.R
 
 
-# ProjMCS9 - Peak analysis
 
-projMCS9.R
 
 
 
