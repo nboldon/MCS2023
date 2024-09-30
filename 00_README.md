@@ -179,6 +179,8 @@ Q5_GenotypeClusterComps_2024_06-28.R
 
 Q6_TvTbyClusterComps_2024-06-28.R
 
+Volcano_byCluster-Tx.R
+
 
 ## ProjMCS7 - Peak Matrix and motif analysis
 
@@ -192,6 +194,52 @@ peakVSmatrix.R
 ## ProjMCS9 - Peak & fragment count analysis
 
 projMCS9.R
+
+BetterBrowserTracks.R
+
+Peak_TxComps-byCluster_2024-09-09.R
+
+Peak_heatmaps_2024-09-11.R
+
+fragCounts_GenomeWide_TxComps.R
+
+fragCounts_byPeak.R
+
+geneFrags.R
+
+geneFragsLoop.R
+
+getMatrix_MCS1.R
+
+nFrags-TSS_byTx-Cluster.R
+
+normPeakStats_2024-09-08.R
+
+peakFrags.R
+
+peakFragsLoop.R
+
+peak_fragCounts_byTx_2024-09-18.R
+
+peaksVSmotifs.R
+
+
+## GO Analysis
+
+GO_Analysis_2024-08-01.R
+
+GO_Barplot.R
+
+GO_Barplot_2.R
+
+GO_Plots_Loop.R
+
+
+## DotPlots
+
+Dotplot.R
+
+revised_DotPlot.R
 
 
 ## Cluster 18 Subset
