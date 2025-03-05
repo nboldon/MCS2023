@@ -66,7 +66,7 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 ######################################################################################
 ######################################################################################
 
-## Project MCS1
+## 03. Project MCS1
 
 
 ## projMCS1_ArrowFiles.R
@@ -88,7 +88,7 @@ Plot QC scores (Unique frags vs TSS Enrichment, Ridge & Violin plots for unique 
 ######################################################################################
 
 
-## Project MCS2
+## 04. Project MCS2
 
 ## projMCS2.R
 
@@ -133,7 +133,7 @@ Track plotting with ArchRBrowser
 ######################################################################################
 
 
-## Project MCS3
+## 05. Project MCS3
 
 ## projMCS3.R
 
@@ -147,7 +147,7 @@ Unable to complete; no RNA-seq data for cohort; study limitation
 ######################################################################################
 
 
-## Project MCS4 
+## 06. Project MCS4 
 
 ## projMCS4.R
 
@@ -159,7 +159,7 @@ Add reproduceable peak set using MACS2
 ######################################################################################
 
 
-## Project MCS5
+## 07. Project MCS5
 
 ## projMCS5.R
 
@@ -206,7 +206,7 @@ projMCS5_C1_Sorted_Heatmap.R
 ######################################################################################
 
 
-## Project MCS6
+## 08. Project MCS6
 
 ## ProjMCS6 - Harmony Added; Single cell embeddings & tx comparisons
 
@@ -234,7 +234,7 @@ Volcano_byCluster-Tx.R
 ######################################################################################
 
 
-## Project MCS7 
+## 09. Project MCS7 
 
 ## ProjMCS7 - Peak Matrix and motif analysis
 
@@ -250,7 +250,7 @@ peakVSmatrix.R
 ######################################################################################
 
 
-## Project MCS9
+## 10. Project MCS9
 
 ## ProjMCS9 - Peak & fragment count analysis
 
@@ -290,7 +290,7 @@ peaksVSmotifs.R
 ######################################################################################
 
 
-## Cluster 18 Subset
+## 11. Cluster 18 Subset
 
 C18_Subset.R
 
@@ -308,7 +308,7 @@ C18_T1-2-4v3_byCluster_2024-07-31.R
 ######################################################################################
 
 
-## GO Analysis
+## 12. GO Analysis
 
 GO_Analysis_2024-08-01.R
 
@@ -324,7 +324,7 @@ GO_Plots_Loop.R
 ######################################################################################
 
 
-## DotPlots
+## 13. DotPlots
 
 Dotplot.R
 
