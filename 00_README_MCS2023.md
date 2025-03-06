@@ -94,6 +94,11 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 - UMAP using Harmony by sample & cluster
 - TSNE using Harmony by sample & cluster
 
+# Files created from projMCS2_scEmbedding.R
+UMAP-Sample-Clusters.pdf
+TSNE-Sample-Clusters.pdf
+UMAP2Harmony-Sample-Clusters.pdf
+TSNE2Harmony-Sample-Clusters.pdf
 
 # projMCS2_MarkerGenes.R
 - getMarkerFeatures
