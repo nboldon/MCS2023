@@ -72,6 +72,7 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 - 03_TSS-vs-Frags.pdf
 - 03_TSS7_QC-MCS1.pdf
 - 03_QC_FragSize-Distro_2024-02-29.pdf
+- 03_Peak-Call-Summary.pdf
 
 
 ######################################################################################
