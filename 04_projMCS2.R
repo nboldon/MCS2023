@@ -136,4 +136,4 @@ projMCS2 <- addClusters(
 ######################################
 ######################################
 
-##Single Cell Embeddings - see next file
+##Single Cell Embeddings - see 04_projMCS2_scEmbeddings.R
