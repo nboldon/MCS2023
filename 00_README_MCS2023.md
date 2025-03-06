@@ -1,7 +1,6 @@
 # MCS2023
 
-
-## Libraries.R
+# Libraries.R
 Primary libraries:
 library(ArchR)
 library(org.Mm.eg.db)
@@ -11,66 +10,50 @@ library(clusterProfiler)
 library(enrichplot)
 library(pheatmap)
 
-## Conda_Update_Dec2023
+# Conda_Update_Dec2023
 Updated Beartooth conda environment for interactive session
 
-## environment_2024-02-16.yml
+# environment_2024-02-16.yml
 Beartooth conda computing environment
 
 
-######################################################################################
-######################################################################################
-######################################################################################
+####################################################
+####################################################
+####################################################
 
 
-# The following code scripts are used to complete the project:
+## The following code scripts are used to complete the project:
 
-######################################################################################
+##################################################
 
 
 ## 02. Demultiplex code
 
-Custom code from Qi Sun at Cornell University
-
-Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
+# Custom code from Qi Sun at Cornell University
+# Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
 
 README_demultiplex
-
 sciatac.py
-
 get_uniqList1.py
-
 get_uniqList2.py
-
 cratac_curated.txt.gz
-
 cellranger)_commands.py
-
 samplelist
-
 bedConvert.py
 
-
-
-## cellrangerRun.sh
-
+# cellrangerRun.sh
 Slurm script to create Cellranger files
 
-
-## Rename_FragFiles.R
-
+# Rename_FragFiles.R
 Renames Cellranger files; can then be moved to new folder for downstream analysis
 
 
-######################################################################################
-######################################################################################
-######################################################################################
+##############################################
+##############################################
+##############################################
 
 ## 03. Project MCS1
-## Creates projMCS1 for downstream analysis
-
-## Code used for projMCS1
-# Creates projMCS1 for downstream analysis
+- Creates projMCS1 for downstream analysis
 
 # 03_projMCS1_ArrowFiles.R
 - Creates arrow files in ArchR to create project
@@ -83,9 +66,9 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
   - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
 
 # QC files:
-TSS-vs-Frags.pdf
-TSS7_QC-MCS1.pdf
-QC_FragSize-Distro_2024-02-29.pdf
+- TSS-vs-Frags.pdf
+- TSS7_QC-MCS1.pdf
+- QC_FragSize-Distro_2024-02-29.pdf
 
 
 ######################################################################################
@@ -95,42 +78,27 @@ QC_FragSize-Distro_2024-02-29.pdf
 
 ## 04. Project MCS2
 
-## projMCS2.R
+# projMCS2.R
+- Filters doublets
+- Adds Iterative LSI
+- Adds Harmony
+- Adds Clusters
+- Creates cluster confusion matrix
 
-Filter doublets
-
-Add Iterative LSI
-
-Add Harmony
-
-Add Clusters
-
-Create cluster confusion matrix
-
-
-## projMCS2_scEmbeddings.R
-
-UMAP using LSI by sample & cluster
-
-TSNE using LSI by sample & cluster
-
-UMAP using Harmony by sample & cluster
-
-TSNE using Harmony by sample & cluster
+# projMCS2_scEmbeddings.R
+- UMAP using LSI by sample & cluster
+- TSNE using LSI by sample & cluster
+- UMAP using Harmony by sample & cluster
+- TSNE using Harmony by sample & cluster
 
 
-## projMCS2_MarkerGenes.R
+# projMCS2_MarkerGenes.R
+- getMarkerFeatures
+- Marker list by cluster (FDR & Log2FC)
+- Heatmaps for marker features; cowplots for all genes
 
-getMarkerFeatures
-
-Marker list by cluster (FDR & Log2FC)
-
-Heatmaps for marker features; cowplots for all genes
-
-
-## projMCS2_ArchRBrowser.R
-
-Track plotting with ArchRBrowser
+# projMCS2_ArchRBrowser.R
+- Track plotting with ArchRBrowser
 
 
 ######################################################################################
