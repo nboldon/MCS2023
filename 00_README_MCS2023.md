@@ -1,7 +1,7 @@
 # MCS2023
 
 # Libraries.R
-Primary libraries:
+# Primary libraries used
 library(ArchR)
 library(org.Mm.eg.db)
 library(BiocManager)
