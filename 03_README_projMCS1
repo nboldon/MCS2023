@@ -11,3 +11,7 @@
 - Plots QC scores 
   - Density plot for nFrags vs TSS Enrichment
   - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
+
+QC files:
+TSS7_QC-MCS1.pdf
+QC_FragSize-Distro_2024-02-29.pdf
