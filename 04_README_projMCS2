@@ -1,11 +1,13 @@
 ## 04. Project MCS2
 
+
 # projMCS2.R
 - Filters doublets
 - Adds Iterative LSI
 - Adds Harmony
 - Adds Clusters
 - Creates cluster confusion matrix
+
 
 # projMCS2_scEmbeddings.R
 - UMAP using LSI by sample & cluster
@@ -19,7 +21,9 @@
 04_UMAP2Harmony-Sample-Clusters.pdf
 04_TSNE2Harmony-Sample-Clusters.pdf
 
+
 # projMCS2_MarkerGenes.R
+# Group by: Cluster (no subset), FDR <= 0.01, (abs)Log2FC >= 1.25
 - getMarkerFeatures
 - Marker list by cluster (FDR & Log2FC)
 - Heatmaps for marker features; cowplots for all genes
