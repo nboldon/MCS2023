@@ -1,5 +1,13 @@
 ## Creates projMCS1 for downstream analysis
 
 ## Code used for projMCS1:
-# 03_projMCS1_ArrowFiles.R
-# 03_projMCS1.R
+
+03_projMCS1_ArrowFiles.R
+- Creates arrow files in ArchR to create project
+
+03_projMCS1.R
+- Adds doublet scores
+- Creates dataframes for nFrags and TSS Enrichment
+- Plots QC scores 
+  - Density plot for nFrags vs TSS Enrichment
+  - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
