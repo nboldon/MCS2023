@@ -1,0 +1,14 @@
+## 04. Project MCS2
+
+## projMCS2.R
+Filters doublets
+Adds Iterative LSI
+Adds Harmony
+Adds Clusters 
+Creates cluster confusion matrix
+
+## projMCS2_scEmbeddings.R
+Creates UMAPs using LSI by sample and cluster
+Creates t-SNEs using LSI by sample and cluster
+Creates UMAPs using Harmony by sample and cluster
+Creates t-SNEs using Harmony by sample and cluster
