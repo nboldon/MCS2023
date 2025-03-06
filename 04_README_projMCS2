@@ -1,20 +1,30 @@
 ## 04. Project MCS2
 
-## projMCS2.R
-Filters doublets
-Adds Iterative LSI
-Adds Harmony
-Adds Clusters 
-Creates cluster confusion matrix
+# projMCS2.R
+- Filters doublets
+- Adds Iterative LSI
+- Adds Harmony
+- Adds Clusters
+- Creates cluster confusion matrix
 
-## projMCS2_scEmbeddings.R
-Creates UMAPs using LSI by sample and cluster
-Creates t-SNEs using LSI by sample and cluster
-Creates UMAPs using Harmony by sample and cluster
-Creates t-SNEs using Harmony by sample and cluster
+# projMCS2_scEmbeddings.R
+- UMAP using LSI by sample & cluster
+- TSNE using LSI by sample & cluster
+- UMAP using Harmony by sample & cluster
+- TSNE using Harmony by sample & cluster
 
-# Files created:
+# Files created from projMCS2_scEmbedding.R
 UMAP-Sample-Clusters.pdf
 TSNE-Sample-Clusters.pdf
 UMAP2Harmony-Sample-Clusters.pdf
 TSNE2Harmony-Sample-Clusters.pdf
+
+# projMCS2_MarkerGenes.R
+- getMarkerFeatures
+- Marker list by cluster (FDR & Log2FC)
+- Heatmaps for marker features; cowplots for all genes
+
+# projMCS2_ArchRBrowser.R
+- Track plotting with ArchRBrowser
+
+
