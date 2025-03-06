@@ -55,6 +55,9 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 ## 03. Project MCS1
 - Creates projMCS1 for downstream analysis
 
+
+## Code used for projMCS1:
+
 # 03_projMCS1_ArrowFiles.R
 - Creates arrow files in ArchR to create project
 
