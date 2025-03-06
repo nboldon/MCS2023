@@ -50,6 +50,12 @@ ggAlignPlots(p1, p2, type = "h")
 #To save an editable vectorized version of the plots:
 plotPDF(p1,p2, name = "UMAP-Sample-Clusters.pdf", ArchRProj = projMCS2, addDOC = FALSE, width = 5, height = 5)
 
+#################################################
+#################################################
+#################################################
+
+## Scran clustering did not run
+
 #plotEmbedding() can also be used to visualize the results from clustering using scran
 
 p1 <- plotEmbedding(ArchRProj = projMCS2, colorBy = "cellColData", name = "Sample", embedding = "UMAP")
