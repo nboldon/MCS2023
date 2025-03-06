@@ -14,10 +14,10 @@
 - TSNE using Harmony by sample & cluster
 
 # Files created from projMCS2_scEmbedding.R
-UMAP-Sample-Clusters.pdf
-TSNE-Sample-Clusters.pdf
-UMAP2Harmony-Sample-Clusters.pdf
-TSNE2Harmony-Sample-Clusters.pdf
+04_UMAP-Sample-Clusters.pdf
+04_TSNE-Sample-Clusters.pdf
+04_UMAP2Harmony-Sample-Clusters.pdf
+04_TSNE2Harmony-Sample-Clusters.pdf
 
 # projMCS2_MarkerGenes.R
 - getMarkerFeatures
