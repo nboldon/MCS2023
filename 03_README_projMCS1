@@ -1,4 +1,6 @@
-## Creates projMCS1 for downstream analysis
+## 03. Project MCS1
+- Creates projMCS1 for downstream analysis
+
 
 ## Code used for projMCS1:
 
@@ -16,6 +18,7 @@
 - TSS-vs-Frags.pdf
 - TSS7_QC-MCS1.pdf
 - QC_FragSize-Distro_2024-02-29.pdf
+
 
 
 ######################################################################################
