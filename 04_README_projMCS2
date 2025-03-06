@@ -23,7 +23,7 @@
 
 
 # projMCS2_MarkerGenes.R
-# Group by: Cluster (no subset), FDR <= 0.01, (abs)Log2FC >= 1.25
+# Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
 - getMarkerFeatures
 - Marker list by cluster (FDR & Log2FC)
 - Heatmaps for marker features; cowplots for all genes
