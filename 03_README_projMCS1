@@ -15,9 +15,9 @@
   - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
 
 # QC files:
-- TSS-vs-Frags.pdf
-- TSS7_QC-MCS1.pdf
-- QC_FragSize-Distro_2024-02-29.pdf
+- 03_TSS-vs-Frags.pdf
+- 03_TSS7_QC-MCS1.pdf
+- 03_QC_FragSize-Distro_2024-02-29.pdf
 
 
 
