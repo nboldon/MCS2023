@@ -12,3 +12,9 @@ Creates UMAPs using LSI by sample and cluster
 Creates t-SNEs using LSI by sample and cluster
 Creates UMAPs using Harmony by sample and cluster
 Creates t-SNEs using Harmony by sample and cluster
+
+# Files created:
+UMAP-Sample-Clusters.pdf
+TSNE-Sample-Clusters.pdf
+UMAP2Harmony-Sample-Clusters.pdf
+TSNE2Harmony-Sample-Clusters.pdf
