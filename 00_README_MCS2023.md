@@ -69,17 +69,23 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 ## 03. Project MCS1
 ## Creates projMCS1 for downstream analysis
 
-## Code used for projMCS1:
+## Code used for projMCS1
+# Creates projMCS1 for downstream analysis
 
-03_projMCS1_ArrowFiles.R
+# 03_projMCS1_ArrowFiles.R
 - Creates arrow files in ArchR to create project
 
-03_projMCS1.R
+# 03_projMCS1.R
 - Adds doublet scores
 - Creates dataframes for nFrags and TSS Enrichment
 - Plots QC scores 
   - Density plot for nFrags vs TSS Enrichment
   - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
+
+# QC files:
+TSS-vs-Frags.pdf
+TSS7_QC-MCS1.pdf
+QC_FragSize-Distro_2024-02-29.pdf
 
 
 ######################################################################################
