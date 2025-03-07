@@ -15,15 +15,13 @@
 13_T1-2-4vT3_TxComp_FDR-0-1_Log2FC-0-5_2024-07-31.R
 - Both of these files carry out similar functions to 13_Clusters_TvsTComp_2024-06-28.R
 
-
-projMCS6_Volcano_2024.08-08.R
-
-
-
-Q4_GenotypeTxComps_2024-06-28.R
+13_Q4_GenotypeTxComps_2024-06-28.R
+- Adds Harmony
+- Subsets by genotype, group by clusters
+- cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+- File: GenotypeCompByCluster_FDR-0-1_Log2FC-0-5_2024-06-28.csv
 
 Q5_GenotypeClusterComps_2024_06-28.R
 
-Q6_TvTbyClusterComps_2024-06-28.R
-
 Volcano_byCluster-Tx.R
+projMCS6_Volcano_2024.08-08.R
