@@ -28,6 +28,11 @@
 - Marker list by cluster (FDR & Log2FC)
 - Heatmaps for marker features; cowplots for all genes
 
+# NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
+# projMCS5_MarkerGenes.R 
+# Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
+- Files saved ex: C1_MarkerGenes_2025-03-06.csv
+
 # projMCS2_ArchRBrowser.R
 - Track plotting with ArchRBrowser
 
