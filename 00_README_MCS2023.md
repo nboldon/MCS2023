@@ -82,12 +82,14 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 
 ## 04. Project MCS2
 
+
 # projMCS2.R
 - Filters doublets
 - Adds Iterative LSI
 - Adds Harmony
 - Adds Clusters
 - Creates cluster confusion matrix
+
 
 # projMCS2_scEmbeddings.R
 - UMAP using LSI by sample & cluster
@@ -96,22 +98,24 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 - TSNE using Harmony by sample & cluster
 
 # Files created from projMCS2_scEmbedding.R
-UMAP-Sample-Clusters.pdf
-TSNE-Sample-Clusters.pdf
-UMAP2Harmony-Sample-Clusters.pdf
-TSNE2Harmony-Sample-Clusters.pdf
+04_UMAP-Sample-Clusters.pdf
+04_TSNE-Sample-Clusters.pdf
+04_UMAP2Harmony-Sample-Clusters.pdf
+04_TSNE2Harmony-Sample-Clusters.pdf
+
 
 # projMCS2_MarkerGenes.R
+# Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
 - getMarkerFeatures
 - Marker list by cluster (FDR & Log2FC)
 - Heatmaps for marker features; cowplots for all genes
-- # NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
+# NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
 
 # projMCS5_MarkerGenes.R 
 # Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
 - Files saved for each cluster; ex: C1_MarkerGenes_2025-03-06.csv
 
-# Summary files created from projMCS2_MarkerGenes.R and projMCS5_MarkerGenes.R
+# Summary files created from analysis results of projMCS2_MarkerGenes.R
 - 04_Cluster_Analysis_2024-02-12.xlsm
     - Each tab summarizes cell count information by cluster, including:
       - cell counts by sample and cluster (incl. median TSS & nFrags per cell)
@@ -120,14 +124,35 @@ TSNE2Harmony-Sample-Clusters.pdf
       - cell counts by cluster and genotype
       - cell counts by cluster and sequencing lane
       - cell counts by PCR plate (library preparation day)
-        
-- 04_GeneMarkers_byCluster_1-31-2024
-- 04_GeneMarkers_Top50_Heatmap_1-25-2024
+- 04_GeneMarkers_byCluster_1-31-2024.xlsx
+  - Includes cell type-specific marker gene notes from literature reviews in tabs 1 & 2
+  - There is a tab for each cluster that highlights:
+    - the top 50 marker genes, based on FDR 
+    - cell type-specific marker genes found in literature reviews
+  - There are two additional tabs for C1, C3, C8, C18, and C21 that highlight:
+    - One tab specifies the Panther GO family, molecular function, biological process, cellular component, protein class, and pathways affected by specified genes. 
+    - The other tab displays seperate bargraphs for Panther GO categories associated with molecular function, biological process, cellular component, protein class, and pathways affected by specified genes.
+- 04_MCS2023_1-31-2024.pptx
+    - Summarizes key points of interest from the above analysis
+
+# Heatmaps of projMCS2 by cluster from projMCS2_MarkerGenes.R
+- 04_UMAP-MarkerGenes-WO-Imputation.pdf
 - 04_GeneScores-Marker-Heatmap.pdf
-- 04_MCS2023_1-31-2024
+    - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
+- 04_GeneMarkers_Top50_Heatmap_1-25-2024.pdf
+
 
 # projMCS2_ArchRBrowser.R
 - Track plotting with ArchRBrowser
+- 04_Plot-Tracks-MarkerGenes_2024-04-04.pdf 
+    - Creates browser tracks for the following genes:
+    - "Aqp4", "Aldh1l1", "Mlc1", "Cbs", "Ppp1r3c", "Plcd4", "Dio2", #Astrocyte
+    - "Cldn11", "Cx3cr1", "Csf1r", "Sparc", "Trem2", "Ccl4", "Cd14", "Tyrobp", "C1qa", #Microglia
+    - "Olig1", "Mbp", "Opalin", "Mag", "Mog", "Cldn11", "Ugt8a", "Olig2", #Oligodendrocyte
+    - "Spock3", "Gad1", "Grin3a", "Adarb2", "Grik1", "Lhx6", "Pvalb", "Gad2",  #GABAergic
+    - "Sulf1", "Slc17a8", "Tshz2", "Slc17a6", "Neurod6", #Glutamatergic
+    - "Cldn5" #"CD31"DoesNotExist #Endothelial
+      
 
 
 ######################################################################################
