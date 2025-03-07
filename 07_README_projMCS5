@@ -93,22 +93,39 @@
 ######################################
 
 
-# 07_projMCS5_ArchRBrowser.R
-- Additional browser track gene regions of interest
-
-
-######################################
-
 
 ## Cluster identification using specific gene markers
 
+
+# 07_projMCS5_ArchRBrowser.R
+- Additional browser track gene regions of interest
+- Subset by treatment group
+- C18 Subcluster subset by treatment group
+- Files generated using this code:
+  - 07_Browser-Tracks_C18-grpByTx_2024-06-05.pdf
+  - 07_Browser-Tracks_T3-grpByClusters_2024-06-05.pdf
+
+
 07_projMCS5_ClusterID_UMAP.R
+- Additional UMAPs created using genes of interest
+- File generated: 07_UMAP-Marker-Genes-W-Imputation_2024-04-04.pdf
+
 
 07_projMCS5_markerList_byCluster-Tx.R
+- Creates heatmap & z-scores for 4 treatment groups using all sig genes found in C18, subset by C18
+- Generates file: 07_C18_All127_byTx_zscores_2024-03-13.csv
+
 
 07_projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
+- Subsets by cluster
+- Uses marker genes known to be significant for the cluster of interest
+- Creates z-scores and heatmaps for each
+- File names ex: C4_byTx_zscores_2024-03-21.csv & C4_TxComp_Heatmap_2024-03-21.pdf
 
 07_projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
+- Subset by treatment, group by cluster
+- cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
+- File names ex: T1_C1_GeneMarkers_2024-04-10.csv
 
 07_projMCS5_Pairwise_byClusterTxGrp_2024-05-21.R
 
