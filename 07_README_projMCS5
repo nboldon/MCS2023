@@ -20,12 +20,7 @@
   - 07_Peak-Marker-Heatmap_2025-03-06.pdf
 
 
-
 ######################################
-
-
-
-## Cluster identification using specific gene markers
 
 
 # 07_projMCS5_ArchRBrowser.R
@@ -35,32 +30,3 @@
 - Files generated using this code:
   - 07_Browser-Tracks_C18-grpByTx_2024-06-05.pdf
   - 07_Browser-Tracks_T3-grpByClusters_2024-06-05.pdf
-
-
-07_projMCS5_markerList_byCluster-Tx.R
-- Creates heatmap & z-scores for 4 treatment groups using all sig genes found in C18, subset by C18
-- Generates file: 07_C18_All127_byTx_zscores_2024-03-13.csv
-
-
-07_projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
-- Subsets by cluster
-- Uses marker genes known to be significant for the cluster of interest
-- Creates z-scores and heatmaps by treatment
-- File names ex: C4_byTx_zscores_2024-03-21.csv & C4_TxComp_Heatmap_2024-03-21.pdf
-07_projMCS5_C1_Sorted_Heatmap.R
-- First sorted heatmaps created
-07_projMCS7_GeneMarkers_byCluster-TxGrp_2024-10-17.R
-- Upgrades from previous 2 code records include sorted heatmaps in 1 file
-07_projMCS5_GeneMarkers_byClusterTxComp_Loop_2024-10-17.R
-- Subsets by cluster, group by treatment; loop for all clusters
-07_projMCS7_GeneMarkers_byCellType-TxGrp_2025-01-16.R
-- Similar code to projMCS7_GeneMarkers_byCluster-TxGrp_2025-01-16.R but focuses on cell type groups
-* - Files saved ex: astro_GeneMarker_List_2025-01-16.csv
-
-
-07_projMCS5_Pairwise_byClusterTxGrp_2024-05-21.R
-
-
-
-
-## 07_MCS2023_2024-14.pptx provides a summary of this analysis
