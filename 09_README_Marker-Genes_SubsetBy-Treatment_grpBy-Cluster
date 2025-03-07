@@ -9,3 +9,8 @@
 - File names ex: T1_C1_GeneMarkers_2024-04-10.csv
 - Subsets by cluster, group by treatment
 - File names ex: C1_GeneMarker_List_2024-04-08.csv & GeneMarker_List_Master_2024-04-08.csv
+
+# Marker genes that were subset by treatment group, then groupBy cluster
+# were combined into one spreadsheet using: 
+09_Combine_Spreadsheets.R
+- File names ex: C1_TxMarkers_Combined.csv
