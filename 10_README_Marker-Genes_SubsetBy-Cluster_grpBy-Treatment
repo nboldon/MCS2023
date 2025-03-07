@@ -1,3 +1,7 @@
+
+## 10. Marker genes subset by cluster, grouped by treatment
+
+
 10_projMCS5_markerList_byCluster-Tx.R
 - Creates heatmap & z-scores for 4 treatment groups using all sig genes found in C18, subset by C18
 - Generates file: 07_C18_All127_byTx_zscores_2024-03-13.csv
