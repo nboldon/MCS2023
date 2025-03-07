@@ -1,0 +1,71 @@
+######################################
+
+
+## Cell Abundance
+
+# 07_projMCS5_cellAbundance.R
+- Cell abundance analysis uses 07_Cell-Abundance_2024-02-08.csv
+- Performs ANOVA to determine significant differences between treatment groups
+
+# 07_Abundance_Boxplots_2024-04-11.R
+- Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
+- Improved stats from 07_projMCS5_cellAbundance.R
+- Uses ANOVA, t-tests, and Bonforonni correction
+- C8 & C20 show significant differences
+
+# 07_Cell_Abundance_Boxplots_2024-12-09.R
+- Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
+- Improved color palette than those run on 2024-04-11
+- C8 shows significant differences by treatment
+
+# 07_CellAbundance_Boxplots_wStats_2025-02-21
+- Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
+- Improved color palette and stats than those run on 2024-04-11 & 2024-12-09
+- Uses ANOVA, then for those that are sig, uses t-tests, followed by Bonforonni correction
+- See below for sig differences by comparison
+
+# Files created by Cell_Abundance_Boxplots_2024-12-09.R (do not display stats):
+- 07_CellAbund_Boxplots_2024-12-09.jpg
+- 07_CellAbund_Boxplots_wMean_2024-12-09.jpg
+- 07_CellAbund_Boxplots_ByCellType_2024-12-09.jpg
+- 07_CellAbund_Boxplots_by_Genotype-CellType_2024-12-09.jpg
+- 07_CellAbund_Boxplot_TsCombined_2024-12-09.pdf
+- 07_CellAbund_Boxplot_2NCombined_2024-12-09.pdf
+
+# Files created by Cell_Abundance_Boxplots_wStats_2025-02-21.R (incl. sig stats):
+- 07_CellAbund_Boxplots_Stats_wMean_byCluster_2025-02-21.jpg
+- 07_CellAbund_Boxplots_Stats_byCluster_2025-02-21.jpg
+- 07_CellAbund_Genotype_Stats_2025-02-21.csv
+- 07_CellAbund_Boxplots_by_Genotype-CellType_Stats_2025-02-21.pdf
+- 07_CellAbund_Boxplots_by_Genotype-CellType_Stats_2025-02-21.jpg
+  * P-adj pairwise comparisons show sig diff in Astrocytes comparing 2N & 2N+ vs. Ts & Ts+
+- 07_CellAbund_Pairwise_Stats_byCluster_2025-02-21.csv
+  * P-adj pairwise comparisons show sig diff in cluster specific comparisons:
+    - C8 2N+ vs Ts, C8 2N+ vs Ts+, C14 2N+ vs Ts+, C20 2N vs Ts
+- 07_CellAbund_Boxplots_2N_vs_2N+_cellType_2025-02-21.pdf
+- 07_CellAbund_Boxplots_2N_vs_2N+_cellType_2025-02-21_ANOVA_cellType_stats_2025-02-21.csv
+- 07_CellAbund_Boxplots_2N_vs_2N+_cellType_2025-02-21_pairwise_cellType_stats_2025-02-21.csv
+  * No sig differences found in 2N vs 2N+ by cell type
+- 07_CellAbund_Boxplots_2N_vs_Ts_cellType_2025-02-21.pdf
+- 07_CellAbund_Boxplots_2N_vs_Ts_cellType_2025-02-21_pairwise_cellType_stats_2025-02-21.csv
+- 07_CellAbund_Boxplots_2N_vs_Ts_cellType_2025-02-21_ANOVA_cellType_stats_2025-02-21.csv
+  * P-adj pairwise comparisons show sig diff in Astrocytes comparing 2N vs Ts
+- 07_CellAbund_Boxplots_2N_vs_Ts+_cellType_2025-02-21.pdf
+- 07_CellAbund_Boxplots_2N_vs_Ts+_cellType_2025-02-21_pairwise_cellType_stats_2025-02-21.csv
+- 07_CellAbund_Boxplots_2N_vs_Ts+_cellType_2025-02-21_ANOVA_cellType_stats_2025-02-21.csv
+  * P-adj pairwise comparisons show sig diff in Astrocytes comparing 2N vs Ts+
+- 07_CellAbund_Boxplots_2N+_vs_Ts_cellType_2025-02-21.pdf
+- 07_CellAbund_Boxplots_2N+_vs_Ts_cellType_2025-02-21_pairwise_cellType_stats_2025-02-21.csv
+- 07_CellAbund_Boxplots_2N+_vs_Ts_cellType_2025-02-21_ANOVA_cellType_stats_2025-02-21.csv
+  * P-adj pairwise comparisons show sig diff in Astrocytes comparing 2N+ vs Ts
+- 07_CellAbund_Boxplots_2N+_vs_Ts+_cellType_2025-02-21.pdf
+- 07_CellAbund_Boxplots_2N+_vs_Ts+_cellType_2025-02-21_pairwise_cellType_stats_2025-02-21.csv
+- 07_CellAbund_Boxplots_2N+_vs_Ts+_cellType_2025-02-21_ANOVA_cellType_stats_2025-02-21.csv
+  * P-adj pairwise comparisons show sig diff in Astrocytes & GlutOligo comparing 2N+ vs Ts
+- 07_CellAbund_Boxplots_Ts_vs_Ts+_cellType_2025-02-21.pdf
+- 07_CellAbund_Boxplots_Ts_vs_Ts+_cellType_2025-02-21_pairwise_cellType_stats_2025-02-21.csv
+- 07_CellAbund_Boxplots_Ts_vs_Ts+_cellType_2025-02-21_ANOVA_cellType_stats_2025-02-21.csv
+  * No sig differences found in 2N vs 2N+ by cell type
+
+
+######################################
