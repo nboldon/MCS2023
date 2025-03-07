@@ -1,7 +1,11 @@
-11_projMCS5_ClusterID_UMAP.R
+
+## 12. Cluster specific marker genes
+
+
+12_projMCS5_ClusterID_UMAP.R
 - Additional UMAPs created using genes of interest
 - File generated: 07_UMAP-Marker-Genes-W-Imputation_2024-04-04.pdf
 
-11_projMCS5_Zu-2023_geneMarker_UMAPs_2024-07-10.R
+12_projMCS5_Zu-2023_geneMarker_UMAPs_2024-07-10.R
 - Additinal UMAPs created using genes from Zu et al. 2023 publication
 - Files generated ex: microglia_geneMarkers-Zu-2023_2024-07-10.pdf & projMCS6_UMAP-Clusters_2024-07-10.pdf
