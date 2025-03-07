@@ -105,6 +105,26 @@ TSNE2Harmony-Sample-Clusters.pdf
 - getMarkerFeatures
 - Marker list by cluster (FDR & Log2FC)
 - Heatmaps for marker features; cowplots for all genes
+- # NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
+
+# projMCS5_MarkerGenes.R 
+# Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
+- Files saved for each cluster; ex: C1_MarkerGenes_2025-03-06.csv
+
+# Summary files created from projMCS2_MarkerGenes.R and projMCS5_MarkerGenes.R
+- 04_Cluster_Analysis_2024-02-12.xlsm
+    - Each tab summarizes cell count information by cluster, including:
+      - cell counts by sample and cluster (incl. median TSS & nFrags per cell)
+      - normalized cell abundance percentages by sample (cells in cluster by sample divided by total cells in  sample; incl. total cell counts by sample)
+      - normalized cell abundance by treatment group (incl. total cell counts by cluster and treatment group)
+      - cell counts by cluster and genotype
+      - cell counts by cluster and sequencing lane
+      - cell counts by PCR plate (library preparation day)
+        
+- 04_GeneMarkers_byCluster_1-31-2024
+- 04_GeneMarkers_Top50_Heatmap_1-25-2024
+- 04_GeneScores-Marker-Heatmap.pdf
+- 04_MCS2023_1-31-2024
 
 # projMCS2_ArchRBrowser.R
 - Track plotting with ArchRBrowser
