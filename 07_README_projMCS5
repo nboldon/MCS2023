@@ -125,6 +125,8 @@
 - First sorted heatmaps created
 07_projMCS7_GeneMarkers_byCluster-TxGrp_2024-10-17.R
 - Upgrades from previous 2 code records include sorted heatmaps in 1 file
+07_projMCS7_GeneMarkers_byCellType-TxGrp_2025-01-16.R
+- Similar code to projMCS7_GeneMarkers_byCluster-TxGrp_2025-01-16.R but focuses on cell type groups
 
 
 
