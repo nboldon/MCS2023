@@ -1,15 +1,11 @@
-## Subsets by treatment group; groupBy Cluster
-
 #Setup an interactive session
-salloc --account=eon -t 0-06:00 --mem=128G --nodes=2 --ntasks-per-node=16
-
+#salloc --account=eon -t 0-06:00 --mem=128G --nodes=2 --ntasks-per-node=16
 #Updated conda env 12-2023
-module load miniconda3/23.1.0
-
-conda activate archr2023_12
+#module load miniconda3/23.1.0
+#conda activate archr2023_12
 
 #Load libraries
-R
+#R
 library(ArchR)
 library(org.Mm.eg.db)
 library(AnnotationDbi)
@@ -24,12 +20,12 @@ library(tidyr)
 library(cowplot)
 
 #Additional setup
-setwd("/project/eon/nboldon/MCS2023/ClusterID")
+setwd("/Volumes/DataBox/MCS2023/Tx_Comp/")
 addArchRGenome("mm10")
 addArchRThreads(threads = 16)
 
 #Load project
-projMCS5 <- loadArchRProject(path = "/project/eon/nboldon/MCS2023/Save-ProjMCS5", force = FALSE, showLogo = FALSE)
+projMCS5 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS5", force = FALSE, showLogo = FALSE)
 
 projMCS5
 #NumberOfCells: 104455
@@ -298,6 +294,7 @@ markerList <- getMarkers(markersGenes, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.
 markerList
 
 # 2024-04-08 thresholds: FDR <= 0.01 & abs(Log2FC) >= 1.25
+# 2024-04-26 thresholds: FDR <= 0.01 & abs(Log2FC) >= 1.25
 
 markerList$C1
 
