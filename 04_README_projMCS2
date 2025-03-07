@@ -47,6 +47,16 @@
   - There is a tab for each cluster that highlights:
     - the top 50 marker genes, based on FDR 
     - cell type-specific marker genes found in literature reviews
+  - There are two additional tabs for C1, C3, C8, C18, and C21 that highlight:
+    - One tab specifies the Panther GO family, molecular function, biological process, cellular component, protein class, and pathways affected by specified genes. 
+    - The other tab displays seperate bargraphs for Panther GO categories associated with molecular function, biological process, cellular component, protein class, and pathways affected by specified genes.
+- 04_MCS2023_1-31-2024.pptx
+    - Summarizes key points of interest from the above analysis
+
+# Heatmaps of projMCS2 by cluster
+- 04_GeneScores-Marker-Heatmap.pdf
+- 04_GeneMarkers_Top50_Heatmap_1-25-2024.pdf
+
 
 # projMCS2_ArchRBrowser.R
 - Track plotting with ArchRBrowser
