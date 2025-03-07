@@ -4,3 +4,6 @@
 11_projMCS7_GeneMarkers_byCellType-TxGrp_2025-01-16.R
 - Similar code to projMCS7_GeneMarkers_byCluster-TxGrp_2025-01-16.R but focuses on cell type groups
 * - Files saved ex: astro_GeneMarker_List_2025-01-16.csv
+
+11_CellType_TxComps.R
+- Code did not produce meaningful results
