@@ -119,11 +119,11 @@
 07_projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
 - Subsets by cluster
 - Uses marker genes known to be significant for the cluster of interest
-- Creates z-scores and heatmaps for each
+- Creates z-scores and heatmaps by treatment
 - File names ex: C4_byTx_zscores_2024-03-21.csv & C4_TxComp_Heatmap_2024-03-21.pdf
 
 07_projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
-- Subset by treatment, group by cluster
+- Subsets by treatment, group by cluster
 - cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
 - File names ex: T1_C1_GeneMarkers_2024-04-10.csv
 
