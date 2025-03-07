@@ -9,3 +9,7 @@
 12_projMCS5_Zu-2023_geneMarker_UMAPs_2024-07-10.R
 - Additinal UMAPs created using genes from Zu et al. 2023 publication
 - Files generated ex: microglia_geneMarkers-Zu-2023_2024-07-10.pdf & projMCS6_UMAP-Clusters_2024-07-10.pdf
+
+12_projMCS6_2024-06-20.R
+- Subsets treatment groups
+- Visualizes cell type-specific marker genes
