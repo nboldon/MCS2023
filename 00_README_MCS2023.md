@@ -363,16 +363,12 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 
 
 
-
-
-
-
-
 ###############################################
 ###############################################
 ###############################################
 
-## 08. Project MCS6
+## 12. Project MCS6 - Pairwise Comparisons
+
 
 ## ProjMCS6 - Harmony Added; Single cell embeddings & tx comparisons
 
