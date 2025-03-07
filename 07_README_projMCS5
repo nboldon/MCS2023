@@ -121,6 +121,12 @@
 - Uses marker genes known to be significant for the cluster of interest
 - Creates z-scores and heatmaps by treatment
 - File names ex: C4_byTx_zscores_2024-03-21.csv & C4_TxComp_Heatmap_2024-03-21.pdf
+07_projMCS5_C1_Sorted_Heatmap.R
+- First sorted heatmaps created
+07_projMCS7_GeneMarkers_byCluster-TxGrp_2024-10-17.R
+- Upgrades from previous 2 code records include sorted heatmaps in 1 file
+
+
 
 07_projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
 - Subsets by treatment, group by cluster
@@ -133,7 +139,7 @@
 
 07_projMCS5_Zu-2023_geneMarker_UMAPs.R
 
-07_projMCS5_C1_Sorted_Heatmap.R
+
 
 
 ## 07_MCS2023_2024-14.pptx provides a summary of this analysis
