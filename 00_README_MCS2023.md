@@ -188,50 +188,56 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 
 ## 07. Project MCS5
 
-## projMCS5.R
+# projMCS5.R
+- Adds peak matrix
+- Identifies marker peaks by cluster
+  - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
+- Plots marker peaks
+  - cutOff = "FDR<=0.01 & Log2FC>=1.25"
+- Adds motif annotations
+  - motifSet = "cisbp"
+## NOTE: The 07_projMCS5.R code did not use abs(Log2FC)
+## The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFeatures before applying cutoffs
 
-Add peak matrix
-
-Identify marker peaks by cluster, etc.
-
-Plotting marker peaks
-
-Add motif annotations
-
-
-## projMCS5_cellAbundance.R
-
-Cell abundance analysis
-
-
-## projMCS5_ArchRBrowser.R
-
-Additional browser track regions of interest
-
-
-## Cluster identification using specific gene markers
-
-projMCS5_ClusterID_UMAP.R
-
-projMCS5_markerList_byCluster-Tx.R
-
-projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
-
-projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
-
-projMCS5_Pairwise_byClusterTxGrp_2024-05-21.R
-
-projMCS5_GeneMarkers_TxComp-byCluster_2024-04-29.R
-
-projMCS5_Zu-2023_geneMarker_UMAPs.R
-
-projMCS5_C1_Sorted_Heatmap.R
+# 07_projMCS5-w-ABS-Log2FC.R
+- Identifies marker peaks by cluster
+  - cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
+  - 07_Peak_markerList_2025-03-06.csv
+- Plots marker peaks
+  - cutOff = "FDR<=0.01 & abs(Log2FC)>=1.25"
+  - 07_Peak-Marker-Heatmap_2025-03-06.pdf
 
 
-######################################################################################
-######################################################################################
-######################################################################################
+######################################
 
+
+# 07_projMCS5_ArchRBrowser.R
+- Additional browser track gene regions of interest
+- Subset by treatment group
+- C18 Subcluster subset by treatment group
+- Files generated using this code:
+  - 07_Browser-Tracks_C18-grpByTx_2024-06-05.pdf
+  - 07_Browser-Tracks_T3-grpByClusters_2024-06-05.pdf
+
+
+###############################################
+###############################################
+###############################################
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################
+###############################################
+###############################################
 
 ## 08. Project MCS6
 
