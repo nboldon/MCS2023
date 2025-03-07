@@ -2,31 +2,40 @@
 
 # projMCS5.R
 - Adds peak matrix
-- Identifies marker peaks by cluster, etc.
+- Identifies marker peaks by cluster
+  - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
 - Plots marker peaks
 - Adds motif annotations
+## NOTE: The 07_projMCS5.R code did not use abs(Log2FC)
+## The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFeatures before applying cutoffs
 
-# projMCS5_cellAbundance.R
+# 07_projMCS5-w-ABS-Log2FC.R
+- runs getMarkerFeatures using abs(Log2FC) with cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+
+# Files created with 07_projMCS5-w-ABS-Log2FC.R
+- 07_Peak-Marker-Heatmap_2025-03-06.pdf
+
+# 07_projMCS5_cellAbundance.R
 - Cell abundance analysis
 
-# projMCS5_ArchRBrowser.R
+# 07_projMCS5_ArchRBrowser.R
 - Additional browser track regions of interest
 
 
 ## Cluster identification using specific gene markers
 
-projMCS5_ClusterID_UMAP.R
+07_projMCS5_ClusterID_UMAP.R
 
-projMCS5_markerList_byCluster-Tx.R
+07_projMCS5_markerList_byCluster-Tx.R
 
-projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
+07_projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
 
-projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
+07_projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
 
-projMCS5_Pairwise_byClusterTxGrp_2024-05-21.R
+07_projMCS5_Pairwise_byClusterTxGrp_2024-05-21.R
 
-projMCS5_GeneMarkers_TxComp-byCluster_2024-04-29.R
+07_projMCS5_GeneMarkers_TxComp-byCluster_2024-04-29.R
 
-projMCS5_Zu-2023_geneMarker_UMAPs.R
+07_projMCS5_Zu-2023_geneMarker_UMAPs.R
 
-projMCS5_C1_Sorted_Heatmap.R
+07_projMCS5_C1_Sorted_Heatmap.R
