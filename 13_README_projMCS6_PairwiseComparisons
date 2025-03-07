@@ -17,11 +17,16 @@
 
 13_Q4_GenotypeTxComps_2024-06-28.R
 - Adds Harmony
-- Subsets by genotype, group by clusters
+- Groups by genotype
 - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
-- File: GenotypeCompByCluster_FDR-0-1_Log2FC-0-5_2024-06-28.csv
+- Files: GenotypeTxComp_FDR-0-1_Log2FC-0-5_2024-06-28.csv & GenotypeCompByCluster_FDR-0-1_Log2FC-0-5_2024-06-28.csv
 
-Q5_GenotypeClusterComps_2024_06-28.R
+13_Q5_GenotypeClusterComps_2024_06-28.R
+- Adds Harmony
+- Subsets by genotype, groups by cluster
+- Ex file names: C2_GenotypeComp_FDR-0-1_Log2FC-0-5_2024-06-28.csv
+
+
 
 Volcano_byCluster-Tx.R
 projMCS6_Volcano_2024.08-08.R
