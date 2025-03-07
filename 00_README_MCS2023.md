@@ -41,11 +41,11 @@ cellranger)_commands.py
 samplelist
 bedConvert.py
 
-# cellrangerRun.sh
-Slurm script to create Cellranger files
+cellrangerRun.sh
+- Slurm script to create Cellranger files
 
-# Rename_FragFiles.R
-Renames Cellranger files; can then be moved to new folder for downstream analysis
+Rename_FragFiles.R
+- Renames Cellranger files; can then be moved to new folder for downstream analysis
 
 
 ##############################################
@@ -56,7 +56,7 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 - Creates projMCS1 for downstream analysis
 
 
-## Code used for projMCS1:
+# Code used for projMCS1:
 
 # 03_projMCS1_ArrowFiles.R
 - Creates arrow files in ArchR to create project
@@ -75,9 +75,9 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
 - 03_Peak-Call-Summary.pdf
 
 
-######################################################################################
-######################################################################################
-######################################################################################
+#############################################
+#############################################
+#############################################
 
 
 ## 04. Project MCS2
@@ -155,9 +155,9 @@ Renames Cellranger files; can then be moved to new folder for downstream analysi
       
 
 
-######################################################################################
-######################################################################################
-######################################################################################
+##############################################
+##############################################
+##############################################
 
 
 ## 05. Project MCS3
@@ -169,21 +169,21 @@ Defining cluster ID with scRNA-seq
 Unable to complete; no RNA-seq data for cohort; study limitation
 
 
-######################################################################################
-######################################################################################
-######################################################################################
+###############################################
+###############################################
+###############################################
 
 
 ## 06. Project MCS4 
 
 ## projMCS4.R
 
-Add reproduceable peak set using MACS2
+Add pseudobulk replicates & reproduceable peak set using MACS2
 
 
-######################################################################################
-######################################################################################
-######################################################################################
+###############################################
+###############################################
+###############################################
 
 
 ## 07. Project MCS5
