@@ -6,18 +6,15 @@
 # 08_projMCS5_cellAbundance.R
 - Cell abundance analysis uses 07_Cell-Abundance_2024-02-08.csv
 - Performs ANOVA to determine significant differences between treatment groups
-
 # 08_Abundance_Boxplots_2024-04-11.R
 - Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
 - Improved stats from 07_projMCS5_cellAbundance.R
 - Uses ANOVA, t-tests, and Bonforonni correction
 - C8 & C20 show significant differences
-
 # 08_Cell_Abundance_Boxplots_2024-12-09.R
 - Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
 - Improved color palette than those run on 2024-04-11
 - C8 shows significant differences by treatment
-
 # 08_CellAbundance_Boxplots_wStats_2025-02-21
 - Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
 - Improved color palette and stats than those run on 2024-04-11 & 2024-12-09
