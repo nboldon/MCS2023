@@ -3,7 +3,7 @@
 
 ## ProjMCS6 - Harmony Added; Single cell embeddings & tx comparisons
 
-projMCS6_2024-06-20.R
+13_Clusters_TvsTComp_2024-06-28.R
 - Adds Harmony
 - Subsets by cluster, grpBy treament 
 - Uses MAGIC to impute gene scores
