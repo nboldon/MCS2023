@@ -1,0 +1,13 @@
+## 17. ProjMCS9 
+
+projMCS9.R
+- Loops through all clusters making pairwise comparisons using peakMatrix
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+    - File ex: cluster, "_", useGroup, "vs", bgdGroup, "_Peak9_FDR-0-1_Log2FC-0-5_2024-09-12.csv"
+- addGroupCoverages; to create pseudobulk replicates.
+- addReproduciblePeakSet; getPeakSet
+- Creates projMCS9_5
+- Loops through all clusters; adds impute weights; loops through pairwise comparisons
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+    - File name ex: cluster, "_", useGroup, "vs", bgdGroup, "_Peak9-5_FDR-0-1_Log2FC-0-5_2024-09-13.csv
+- Code repeated to create projMCS9_7; reran pairwise comparison loops. 
