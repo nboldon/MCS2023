@@ -56,19 +56,19 @@ Rename_FragFiles.R
 - Creates projMCS1 for downstream analysis
 
 
-# Code used for projMCS1:
+## Code used for projMCS1:
 
-# 03_projMCS1_ArrowFiles.R
+## 03_projMCS1_ArrowFiles.R
 - Creates arrow files in ArchR to create project
 
-# 03_projMCS1.R
+## 03_projMCS1.R
 - Adds doublet scores
 - Creates dataframes for nFrags and TSS Enrichment
 - Plots QC scores 
   - Density plot for nFrags vs TSS Enrichment
   - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
 
-# QC files:
+## QC files:
 - 03_TSS-vs-Frags.pdf
 - 03_TSS7_QC-MCS1.pdf
 - 03_QC_FragSize-Distro_2024-02-29.pdf
@@ -80,10 +80,10 @@ Rename_FragFiles.R
 #############################################
 
 
-## 04. Project MCS2
+# 04. Project MCS2
 
 
-# projMCS2.R
+## projMCS2.R
 - Filters doublets
 - Adds Iterative LSI
 - Adds Harmony
@@ -91,31 +91,31 @@ Rename_FragFiles.R
 - Creates cluster confusion matrix
 
 
-# projMCS2_scEmbeddings.R
+## projMCS2_scEmbeddings.R
 - UMAP using LSI by sample & cluster
 - TSNE using LSI by sample & cluster
 - UMAP using Harmony by sample & cluster
 - TSNE using Harmony by sample & cluster
 
-# Files created from projMCS2_scEmbedding.R
+## Files created from projMCS2_scEmbedding.R
 04_UMAP-Sample-Clusters.pdf
 04_TSNE-Sample-Clusters.pdf
 04_UMAP2Harmony-Sample-Clusters.pdf
 04_TSNE2Harmony-Sample-Clusters.pdf
 
 
-# projMCS2_MarkerGenes.R
-# Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
+## projMCS2_MarkerGenes.R
+## Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
 - getMarkerFeatures
 - Marker list by cluster (FDR & Log2FC)
 - Heatmaps for marker features; cowplots for all genes
-# NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
+NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
 
-# projMCS5_MarkerGenes.R 
-# Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
+## projMCS5_MarkerGenes.R 
+## Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
 - Files saved for each cluster; ex: C1_MarkerGenes_2025-03-06.csv
 
-# Summary files created from analysis results of projMCS2_MarkerGenes.R
+## Summary files created from analysis results of projMCS2_MarkerGenes.R
 - 04_Cluster_Analysis_2024-02-12.xlsm
     - Each tab summarizes cell count information by cluster, including:
       - cell counts by sample and cluster (incl. median TSS & nFrags per cell)
@@ -135,14 +135,14 @@ Rename_FragFiles.R
 - 04_MCS2023_1-31-2024.pptx
     - Summarizes key points of interest from the above analysis
 
-# Heatmaps of projMCS2 by cluster from projMCS2_MarkerGenes.R
+## Heatmaps of projMCS2 by cluster from projMCS2_MarkerGenes.R
 - 04_UMAP-MarkerGenes-WO-Imputation.pdf
 - 04_GeneScores-Marker-Heatmap.pdf
     - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
 - 04_GeneMarkers_Top50_Heatmap_1-25-2024.pdf
 
 
-# projMCS2_ArchRBrowser.R
+## projMCS2_ArchRBrowser.R
 - Track plotting with ArchRBrowser
 - 04_Plot-Tracks-MarkerGenes_2024-04-04.pdf 
     - Creates browser tracks for the following genes:
@@ -160,7 +160,7 @@ Rename_FragFiles.R
 ##############################################
 
 
-## 05. Project MCS3
+# 05. Project MCS3
 
 ## projMCS3.R
 
@@ -174,7 +174,7 @@ Unable to complete; no RNA-seq data for cohort; study limitation
 ###############################################
 
 
-## 06. Project MCS4 
+# 06. Project MCS4 
 
 ## projMCS4.R
 
@@ -186,9 +186,9 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 ###############################################
 
 
-## 07. Project MCS5
+# 07. Project MCS5
 
-# projMCS5.R
+## projMCS5.R
 - Adds peak matrix
 - Identifies marker peaks by cluster
   - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
@@ -196,10 +196,10 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
   - cutOff = "FDR<=0.01 & Log2FC>=1.25"
 - Adds motif annotations
   - motifSet = "cisbp"
-## NOTE: The 07_projMCS5.R code did not use abs(Log2FC)
-## The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFeatures before applying cutoffs
+NOTE: The 07_projMCS5.R code did not use abs(Log2FC)
+The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFeatures before applying cutoffs
 
-# 07_projMCS5-w-ABS-Log2FC.R
+## 07_projMCS5-w-ABS-Log2FC.R
 - Identifies marker peaks by cluster
   - cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
   - 07_Peak_markerList_2025-03-06.csv
@@ -225,27 +225,27 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 ###############################################
 
 
-## 08. Cell Abundance
+# 08. Cell Abundance
 
-# 08_projMCS5_cellAbundance.R
+## 08_projMCS5_cellAbundance.R
 - Cell abundance analysis uses 07_Cell-Abundance_2024-02-08.csv
 - Performs ANOVA to determine significant differences between treatment groups
-# 08_Abundance_Boxplots_2024-04-11.R
+## 08_Abundance_Boxplots_2024-04-11.R
 - Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
 - Improved stats from 07_projMCS5_cellAbundance.R
 - Uses ANOVA, t-tests, and Bonforonni correction
 - C8 & C20 show significant differences
-# 08_Cell_Abundance_Boxplots_2024-12-09.R
+## 08_Cell_Abundance_Boxplots_2024-12-09.R
 - Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
 - Improved color palette than those run on 2024-04-11
 - C8 shows significant differences by treatment
-# 08_CellAbundance_Boxplots_wStats_2025-02-21
+## 08_CellAbundance_Boxplots_wStats_2025-02-21
 - Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
 - Improved color palette and stats than those run on 2024-04-11 & 2024-12-09
 - Uses ANOVA, then for those that are sig, uses t-tests, followed by Bonforonni correction
 - See below for sig differences by comparison
 
-# Files created by Cell_Abundance_Boxplots_2024-12-09.R (do not display stats):
+## Files created by Cell_Abundance_Boxplots_2024-12-09.R (do not display stats):
 - 08_CellAbund_Boxplots_2024-12-09.jpg
 - 08_CellAbund_Boxplots_wMean_2024-12-09.jpg
 - 08_CellAbund_Boxplots_ByCellType_2024-12-09.jpg
@@ -253,7 +253,7 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 - 08_CellAbund_Boxplot_TsCombined_2024-12-09.pdf
 - 08_CellAbund_Boxplot_2NCombined_2024-12-09.pdf
 
-# Files created by Cell_Abundance_Boxplots_wStats_2025-02-21.R (incl. sig stats):
+## Files created by Cell_Abundance_Boxplots_wStats_2025-02-21.R (incl. sig stats):
 - 08_CellAbund_Boxplots_Stats_wMean_byCluster_2025-02-21.jpg
 - 08_CellAbund_Boxplots_Stats_byCluster_2025-02-21.jpg
 - 08_CellAbund_Genotype_Stats_2025-02-21.csv
@@ -294,7 +294,7 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 ###############################################
 
 
-## 09. Marker genes subset by Treatment, grouped by cluster
+# 09. Marker genes subset by Treatment, grouped by cluster
 
 
 09_projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
@@ -309,8 +309,8 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 - Subsets by cluster, group by treatment
 - File names ex: C1_GeneMarker_List_2024-04-08.csv & GeneMarker_List_Master_2024-04-08.csv
 
-# Marker genes that were subset by treatment group, then groupBy cluster
-# were combined into one spreadsheet using: 
+## Marker genes that were subset by treatment group, then groupBy cluster
+## were combined into one spreadsheet using: 
 09_Combine_Spreadsheets.R
 - File names ex: C1_TxMarkers_Combined.csv
 
@@ -320,7 +320,7 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 ###############################################
 
 
-## 10. Marker genes subset by cluster, grouped by treatment
+# 10. Marker genes subset by cluster, grouped by treatment
 
 
 10_projMCS5_markerList_byCluster-Tx.R
@@ -359,7 +359,7 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 ###############################################
 
 
-## 11. Marker genes subset by cell type, grouped by treatment
+# 11. Marker genes subset by cell type, grouped by treatment
 
 11_projMCS7_GeneMarkers_byCellType-TxGrp_2025-01-16.R
 - Similar code to projMCS7_GeneMarkers_byCluster-TxGrp_2025-01-16.R but focuses on cell type groups
@@ -371,7 +371,7 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 ###############################################
 
 
-## 12. Cluster specific marker genes
+# 12. Cluster specific marker genes
 
 
 12_projMCS5_ClusterID_UMAP.R
@@ -388,7 +388,7 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 ###############################################
 
 
-## 13. Project MCS6 - Pairwise Comparisons
+# 13. Project MCS6 - Pairwise Comparisons
 
 
 ## ProjMCS6 - Harmony Added; Single cell embeddings & tx comparisons
@@ -417,7 +417,7 @@ Volcano_byCluster-Tx.R
 ###############################################
 
 
-14. Volcano Plots
+# 14. Volcano Plots
 
 Volcano_byCluster-Tx.R
 - Add Harmony & impute weights
