@@ -429,6 +429,69 @@ The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFe
 ###############################################
 
 
+# 15. ProjMCS7 - Peak Matrix creation and motif annotations
+
+15_projMCS7.R
+
+Peak enrichment
+- getPeakSet
+- addPeakMatrix
+- Creates projMCS7
+- Marker peak cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+- Plots heatmap of all clusters, file: Peak-Marker-Heatmap_2024-08-07.pdf
+- Plots MA and Volcano plots, file: C18-PeakMarkers-MA-Volcano_2024-08-07.pdf
+- Plots Browser tracks, file: C18-Tracks-With-PeakFeatures_2024-08-07.pdf
+- Pairwise testing between groups; Plots MA & Volcano plots
+    - File: C18-vs-C22-Markers-MA-Volcano_2024-08-07.pdf
+- addMotifAnnotations; motifSet = "cisbp"
+- peakAnnoEnrichment; cutOff = "FDR <= 0.1 & Log2FC >= 0.5"(C18)/Log2FC <= -0.5"(C22)"
+- Creates a dataframe object containing the motif names, corrected p-values, and significance rank. 
+- Plots rank-sorted TF motifs, colored by significance of enrichment
+    - File: C18-vs-C22-Markers-Motifs-Enriched_2024-08-07.pdf
+- Plots an enrichment heatmap, file: Motifs-Enriched-Marker-Heatmap_2024-08-07.pdf
+- addArchRAnnotations
+- Plots top C18 (Log2FC >= 0.5) and C22 (Log2FC <= -0.5)
+    - File: C18-vs-C22-Markers-Motifs-Enriched_2024-08-07.pdf
+    
+Motif Enrichment
+- peakAnnoEnrichment; seMarker = markersPeaks, ArchRProj = projMCS7, peakAnnotation = "Motif"
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+    - Plots heatmap: Motifs-Enriched-Marker-Heatmap_2024-08-07.pdf
+    - Code is not supported collections: EncodeTFBS, ATAC, Codex; or ChIP peakAnnotations
+- addBgdPeaks; used in computing deviations. 
+- addDeviationsMatrix; computes per-cell deviations across all motif annotations.
+- getVarDeviations; used to access deviations & and return a ggplot object. 
+    - File: Variable-Motif-Deviation-Scores_2024-08-07.pdf
+- getFeatures; extracts motifs for downstreatm analysis. 
+- grep; used to get just the features corresponding to z-scores. 
+- Plots groups with impute weights, file: Plot-Groups-Deviations-w-Imputation_2024-08-07.pdf
+- Plots z-score distributions on UMAPs.
+- Cannot run code for markerRNA. 
+
+
+15_normExp_projMCS7.R
+- getMarkerFeatures uses PeakMatrix, groupBy clusters
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+- Creates Browser tracks of interesting genes 
+    - groupBy Sample file: normTracksbySample-Interesting-With-PeakFeatures_2024-08-28.pdf
+    - groupBy cluster file: normTracksbyClusters-Interesting-With-PeakFeatures_2024-08-28.pdf
+    - groupBy treatment file: C3-normTracksbyTx-With-PeakFeatures_2024-08-28.pdf
+    - Examines C18 subclusters
+
+
+15_peakVSmatrix.R
+- Follows code from projMCS7.R, but loops through subset clusters to make tx group pairwise comparisons
+    - File ex: _Motif_FDR-0-1_2024-09-16.csv
+- Creates Browser tracks for genes of interest
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+    - File: C18-Tracks-With-PeakFeatures_2024-08-07.pdf & Peak-C3-T1vsT3-Tracks_2024-09-16.pdf
+    
+
+###############################################
+###############################################
+###############################################
+
+
 # 14. Volcano Plots
 
 Volcano_byCluster-Tx.R
