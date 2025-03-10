@@ -1,7 +1,7 @@
 # MCS2023
 
-# Libraries.R
-# Primary libraries used
+## Libraries.R
+## Primary libraries used
 library(ArchR)
 library(org.Mm.eg.db)
 library(BiocManager)
@@ -10,10 +10,10 @@ library(clusterProfiler)
 library(enrichplot)
 library(pheatmap)
 
-# Conda_Update_Dec2023
+## Conda_Update_Dec2023
 Updated Beartooth conda environment for interactive session
 
-# environment_2024-02-16.yml
+## environment_2024-02-16.yml
 Beartooth conda computing environment
 
 
@@ -27,10 +27,10 @@ Beartooth conda computing environment
 ##################################################
 
 
-## 02. Demultiplex code
+# 02. Demultiplex code
 
-# Custom code from Qi Sun at Cornell University
-# Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
+## Custom code from Qi Sun at Cornell University
+## Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
 
 README_demultiplex
 sciatac.py
@@ -52,7 +52,7 @@ Rename_FragFiles.R
 ##############################################
 ##############################################
 
-## 03. Project MCS1
+# 03. Project MCS1
 - Creates projMCS1 for downstream analysis
 
 
