@@ -393,23 +393,35 @@ The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFe
 
 ## ProjMCS6 - Harmony Added; Single cell embeddings & tx comparisons
 
-projMCS6_2024-06-20.R
+13_Clusters_TvsTComp_2024-06-28.R
+- Adds Harmony
+- Subsets by cluster, grpBy treament 
+- Uses MAGIC to impute gene scores
+- Makes pairwise comparisons between all treatment groups
+- cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+- Ex. file name: C1_T3vsT4Comp_FDR-0-1_Log2FC-0-5_2024-06-26.csv
+13_T3vT124_byCluster_2024-08-09.R
+13_T1-2-4vT3_TxComp_FDR-0-1_Log2FC-0-5_2024-07-31.R
+- Both of these files carry out similar functions to 13_Clusters_TvsTComp_2024-06-28.R
+* Pairwise comparisons from the above code were combined into spreadsheets by cluster
+- Ex. combined file name: C25_MCS6-TxComp_geneMarkersCombined_2024-07-06
+* Pairwise comparisons from the above code were combined into 1 spreadsheet
+- Combined file name: TxComp_Markers_2024-09-05.xlsx
+* Pairwise comparison summary tables were combined (MCS2023 & C18 subset)
+- Combined summary file name: SummaryTables_2024-07-31.xlsx
+* Pairwise comparison gene unions by cluster and pairwise comparison were analyzed
+- Gene union spreadsheet ex. file name: C20_TxComp_GeneUnions_2024-07-24
 
-projMCS6_GeneMarkers_TxComp-byCluster_2024-06-26.R
+13_Q4_GenotypeTxComps_2024-06-28.R
+- Adds Harmony
+- Groups by genotype
+- cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+- Files: GenotypeTxComp_FDR-0-1_Log2FC-0-5_2024-06-28.csv & GenotypeCompByCluster_FDR-0-1_Log2FC-0-5_2024-06-28.csv
 
-projMCS6_Volcano_2024.08-08.R
-
-T3vT124_byCluster_2024-08-09.R
-
-T1-2-4vT3_TxComp_FDR-0-1_Log2FC-0-5_2024-07-31.R
-
-Q4_GenotypeTxComps_2024-06-28.R
-
-Q5_GenotypeClusterComps_2024_06-28.R
-
-Q6_TvTbyClusterComps_2024-06-28.R
-
-Volcano_byCluster-Tx.R
+13_Q5_GenotypeClusterComps_2024_06-28.R
+- Adds Harmony
+- Subsets by genotype, groups by cluster
+- Ex file names: C2_GenotypeComp_FDR-0-1_Log2FC-0-5_2024-06-28.csv
 
 
 ###############################################
