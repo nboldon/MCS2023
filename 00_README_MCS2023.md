@@ -492,6 +492,52 @@ Motif Enrichment
 ###############################################
 
 
+## 16. Fragment count analysis of peak locations
+
+16_peaksVSmotifs.R
+- Similar to 15_peakVSmatrix.R code, but shows examples of removing elements from Browser track plotSummary, such as:
+    - bulkTrack, scTrack, featureTrack, geneTrack
+- Code to loop through all clusters, identifying specific genomic regions (ex: chr 16 & 17 mm10 triplicated regions)
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+    - File ex: Peak-C3_T1vsT3-C3_Tracks_2024-09-17.pdf
+- Obtaining nFrag counts for regions of interest
+    - Specifies regions; creates a dataframe. 
+    - Uses indices of cells corresponding to each sample; extracts peak matrix from sample; gets row ranges; subsets peak ranges by regions of interest; gets indices of overlapping peaks and subsets peak matrix using these indices; calculates total fragments for each cell; sums total fragments across all cells for the current sample; adds results to the df.
+    - File: region_name, "_peakFrag_counts_2024-09-17.csv
+- Combines .csv files and merges them into a new dataframe. 
+    - Creates a treatment column based on sample column; groups and reorders data by treatment.
+    - File: combined_results, "combined_peakFrag_counts_byTx_2024-09-17.csv"
+- Combines files and normalizes by fragment counts. 
+    - Normalizes by dividing the number of gene frags by total number of frags in sample. 
+    - File ex: sample_stats, "combined_normPeaks_statistics_with_treatment_2024-09-17.csv"
+- Loop code does not run.
+
+
+###############################################
+###############################################
+###############################################
+
+
+## 17. ProjMCS9 
+
+projMCS9.R
+- Loops through all clusters making pairwise comparisons using peakMatrix
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+    - File ex: cluster, "_", useGroup, "vs", bgdGroup, "_Peak9_FDR-0-1_Log2FC-0-5_2024-09-12.csv"
+- addGroupCoverages; to create pseudobulk replicates.
+- addReproduciblePeakSet; getPeakSet
+- Creates projMCS9_5
+- Loops through all clusters; adds impute weights; loops through pairwise comparisons
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+    - File name ex: cluster, "_", useGroup, "vs", bgdGroup, "_Peak9-5_FDR-0-1_Log2FC-0-5_2024-09-13.csv
+- Code repeated to create projMCS9_7; reran pairwise comparison loops. 
+
+
+###############################################
+###############################################
+###############################################
+
+
 # 14. Volcano Plots
 
 Volcano_byCluster-Tx.R
