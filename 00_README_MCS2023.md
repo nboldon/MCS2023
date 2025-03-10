@@ -387,6 +387,7 @@ Add pseudobulk replicates & reproduceable peak set using MACS2
 ###############################################
 ###############################################
 
+
 ## 13. Project MCS6 - Pairwise Comparisons
 
 
@@ -411,9 +412,30 @@ Q6_TvTbyClusterComps_2024-06-28.R
 Volcano_byCluster-Tx.R
 
 
-######################################################################################
-######################################################################################
-######################################################################################
+###############################################
+###############################################
+###############################################
+
+
+14. Volcano Plots
+
+Volcano_byCluster-Tx.R
+- Add Harmony & impute weights
+- Subset byy cluster; group by tx
+- Pairwise comparisons
+- CutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+
+14_projMCS6_Volcano_2024.08-08.R
+- Add Harmony & impute weights
+- Subset byy cluster; group by tx
+- Pairwise comparisons
+- CutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+
+
+###############################################
+###############################################
+###############################################
+
 
 
 ## 09. Project MCS7 
