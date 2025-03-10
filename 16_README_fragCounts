@@ -1,1 +1,19 @@
-# 16. Fragment Counts
+## 16. Fragment count analysis of peak locations
+
+16_peaksVSmotifs.R
+- Similar to 15_peakVSmatrix.R code, but shows examples of removing elements from Browser track plotSummary, such as:
+    - bulkTrack, scTrack, featureTrack, geneTrack
+- Code to loop through all clusters, identifying specific genomic regions (ex: chr 16 & 17 mm10 triplicated regions)
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+    - File ex: Peak-C3_T1vsT3-C3_Tracks_2024-09-17.pdf
+- Obtaining nFrag counts for regions of interest
+    - Specifies regions; creates a dataframe. 
+    - Uses indices of cells corresponding to each sample; extracts peak matrix from sample; gets row ranges; subsets peak ranges by regions of interest; gets indices of overlapping peaks and subsets peak matrix using these indices; calculates total fragments for each cell; sums total fragments across all cells for the current sample; adds results to the df.
+    - File: region_name, "_peakFrag_counts_2024-09-17.csv
+- Combines .csv files and merges them into a new dataframe. 
+    - Creates a treatment column based on sample column; groups and reorders data by treatment.
+    - File: combined_results, "combined_peakFrag_counts_byTx_2024-09-17.csv"
+- Combines files and normalizes by fragment counts. 
+    - Normalizes by dividing the number of gene frags by total number of frags in sample. 
+    - File ex: sample_stats, "combined_normPeaks_statistics_with_treatment_2024-09-17.csv"
+- Loop code does not run.
