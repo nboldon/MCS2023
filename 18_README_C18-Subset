@@ -1,1 +1,34 @@
-# 17. Cluster 18 Subset & Reclustering
+# 18. Cluster 18 Subset & Reclustering
+
+## 18_C18_Subset.R
+- subsetArchRProject subsets cluster 18 cells from all other cells. 
+- addIterativeLSI, addHarmony, addClusters completed for the subset.
+- Confusion matrix created, file: C18ArchRSubset_Clusters_2024-06-19.csv
+- UMAP and tSNE single cell embeddings plotted. 
+    - Files: UMAP-Sample-Clusters_C18ArchRSubset_2024-06-19.pdf & TSNE-Sample-Clusters_C18ArchRSubset_2024-06-19.pdf
+- Harmony added to single cell embeddings.
+    - Files: UMAP2Harmony-Sample-Clusters_C18ArchRSubset_2024-06-19.pdf & TSNE2Harmony-Sample-Clusters_C18ArchRSubset_2024-06-19.pdf
+- getMarkerFeatures groupBy clusters; cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
+    - File name ex: i, "_C18ArchRSubset_2024-06-19.csv"
+- UMAPs for genes of interest created, file: GeneScores-Marker-Heatmap_C18ArchRSubset_2024-06-19.pdf
+- UMAP for genes of interest before imputation, file: UMAP-MarkerGenes-WO-Imputation_C18ArchRSubset_2024-06-19.pdf.
+- UMAP for genes of interest after applying MAGIC to impute gene scores, file: UMAP-MarkerGenes-W-Imputation_C18ArchRSubset_2024-06-19.pdf
+- Additional UMAPs created for genes of interest: UMAP-RadialGliaMarkerGenes-W-Imputation_C18ArchRSubset_2024-06-21.pdf
+- UMAP highlights Ts cells, file: UMAP_T3_C18ArchRSubset_2024-06-21.pdf.
+
+## 18_C18_Subset_TxComps_byCluster.R
+- Harmony added, subset by subcluster, assigns treatment groups. 
+
+## 18_C18_TxComps_byCluster_2024-07-24.R
+- Addresses Research Question 3
+    - Harmony added, subset by subcluster, treatment group assigned, getMarkerFeatures groupBytreatment, cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5").
+    - File name ex: C18.18_TxComp_FDR-0-1_Log2FC-0-5_2024-07-25.csv
+- Addresses Research Question 5
+    - Harmony added, subset by subcluster, treatment group assigned, getMarkerFeatures by treatment group pairwise comparison, cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5").
+    - File name ex: C18.18_T1vsT2Comp_FDR-0-1_Log2FC-0-5_2024-07-24.csv
+- Reads pairwise comparison spreadsheets into a dataframe. 
+    - File name ex: C18.18-TxComp_geneMarkersCombined_2024-07-25.csv
+    
+
+## 18_C18_T1-2-4v3_byCluster_2024-07-31.R
+- Follows code workflow from C18_TxComps_byCluster pairwise comparison, but analyzes specific differences between combined groups T1, T2, and T4 compared to T3.
