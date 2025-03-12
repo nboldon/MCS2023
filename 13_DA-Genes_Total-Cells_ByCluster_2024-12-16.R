@@ -1,23 +1,4 @@
 
-# Color Universal Design Pallete: 
-# https://jfly.uni-koeln.de/color/
-
-Blue: Hex "#0072B8"
-Purple: Hex "#9B59B6"
-Yellow: Hex "#F0E442"
-Green: Hex "#009E73"
-
-library(tidyverse)
-library(colorBlindness)
-library(here)
-
-# from https://github.com/clauswilke/colorblindr/blob/master/R/palettes.R
-palette_OkabeIto <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999")
-
-
-colors <- c("#56B4E9", "#F0E442", "#009E73", "#DDA0DD")
-#colors <- c("#0072B2", "#E69F00", "#009E73", "#D55E00")
-#colors <- c("#FF6F61", "#4CAF50", "#008C9E", "#9B59B6")
 
 ######################################
 ######################################
@@ -77,9 +58,7 @@ data_long <- data_long %>%
 str(data_long)
 
 # Define your custom color palette
-colors <- c("#56B4E9", "#F0E442", "#009E73", "#DDA0DD")
-#colors <- c("#0072B2", "#E69F00", "#009E73", "#D55E00")
-#colors <- c("#FF6F61", "#4CAF50", "#008C9E", "#9B59B6")
+colors <- c("#440154", "#31688EFF", "#35B779FF", "#FDE725FF")
 
 # Create the bar graph with the custom color palette
 ggplot(data_long, aes(x = Cluster, y = Total, fill = Comparison)) +
@@ -161,10 +140,10 @@ data_combined$Comparison <- factor(data_combined$Comparison,
                                               "Ts vs. Ts+", "Total Cells"))
 
 # Define custom colors for the comparisons and total cells
-colors <- c("2N/2N+ vs. Ts/Ts+" = "#56B4E9",
-            "2N+/Ts+ vs. 2N/Ts" = "#F0E442",
-            "Ts vs. Ts+" = "#009E73",
-            "Total Cells" = "#D55E00")
+colors <- c("2N/2N+ vs. Ts/Ts+" = "#440154",
+            "2N+/Ts+ vs. 2N/Ts" = "#31688EFF",
+            "Ts vs. Ts+" = "#35B779FF",
+            "Total Cells" = "#FDE725FF")
 
 # Create new positions for the bars
 data_combined <- data_combined %>%
@@ -198,7 +177,7 @@ ggplot(data_combined, aes(fill = Comparison)) +
                         name = "Total Cell Count")
   ) +
   labs(
-    title = "DA Genes and Total Cell Counts per Cluster",
+    title = "DA Genes by Pairwise Comparisons and Total Cell Counts per Cluster",
     x = "Cluster",
     fill = "Comparison"
   ) +
