@@ -143,6 +143,7 @@ QC files:
 
 # 04. Project MCS2
 
+- Filters doublets, runs initial DA gene accessibility groupBy cluster (no subset), and creates initial visualizations for all single cells in the project, including UMAPs, t-SNE, heatmaps, browser tracks. 
 
 04_projMCS2.R
 Filters doublets
