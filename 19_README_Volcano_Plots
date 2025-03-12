@@ -1,12 +1,12 @@
-# 18. Volcano Plots
+# 19. Volcano Plots
 
-18_Volcano_byCluster-Tx.R
+19_Volcano_byCluster-Tx.R
 - Add Harmony & impute weights
 - Subset byy cluster; group by tx
 - Pairwise comparisons
 - CutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
 
-18_projMCS6_Volcano_2024.08-08.R
+19_projMCS6_Volcano_2024.08-08.R
 - Add Harmony & impute weights
 - Subset byy cluster; group by tx
 - Pairwise comparisons
