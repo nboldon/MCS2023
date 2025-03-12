@@ -1,25 +1,24 @@
+# 10. Marker genes subset by cluster, grouped by treatment
 
-## 10. Marker genes subset by cluster, grouped by treatment
 
-
-10_projMCS5_markerList_byCluster-Tx.R
+## 10_projMCS5_markerList_byCluster-Tx.R
 - Creates heatmap & z-scores for 4 treatment groups using all sig genes found in C18, subset by C18
 - Generates file: 07_C18_All127_byTx_zscores_2024-03-13.csv
 
 
-10_projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
+## 10_projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
 - Subsets by cluster
 - Uses marker genes known to be significant for the cluster of interest
 - Creates z-scores and heatmaps by treatment
 - File names ex: C4_byTx_zscores_2024-03-21.csv & C4_TxComp_Heatmap_2024-03-21.pdf
-10_projMCS5_C1_Sorted_Heatmap.R
+## 10_projMCS5_C1_Sorted_Heatmap.R
 - First sorted heatmaps created
-10_projMCS7_GeneMarkers_byCluster-TxGrp_2024-10-17.R
+## 10_projMCS7_GeneMarkers_byCluster-TxGrp_2024-10-17.R
 - Upgrades from previous 2 code records include sorted heatmaps in 1 file
-10_projMCS5_GeneMarkers_byClusterTxComp_Loop_2024-10-17.R
+## 10_projMCS5_GeneMarkers_byClusterTxComp_Loop_2024-10-17.R
 - Subsets by cluster, group by treatment; loop for all clusters
-
-10_projMCS6_GeneMarkers_TxComp-byCluster_2024-06-26.R
+ 
+## 10_projMCS6_GeneMarkers_TxComp-byCluster_2024-06-26.R
 - Adds Harmony, subsets by cluster, groupBy treatment, uses MAGIC
 - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5
 - Ex. file name: C25_TxComp_FDR-0-1_Log2FC-0-5_2024-06-26.csv
