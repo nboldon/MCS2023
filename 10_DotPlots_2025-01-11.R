@@ -1,12 +1,3 @@
-setwd("/Volumes/DataBox/ProjMCS6/Dotplots")
-addArchRGenome("mm10")
-addArchRThreads(threads = 16)
-
-##################################################
-
-projMCS6 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS6", force = FALSE, showLogo = FALSE)
-projMCS6
-getAvailableMatrices(projMCS6)
 
 ##################################################
 
@@ -22,8 +13,25 @@ library(cowplot)
 library(ggtree)
 library(patchwork) 
 
+setwd("/Volumes/DataBox/ProjMCS6/Dotplots")
+addArchRGenome("mm10")
+addArchRThreads(threads = 16)
+
+##################################################
+
+projMCS6 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS6", force = FALSE, showLogo = FALSE)
+projMCS6
+getAvailableMatrices(projMCS6)
+
+
 ##################################################
 ##################################################
+#########################################
+#########################################
+#########################################
+#########################################
+#########################################
+
 
 #To get a dataframe of the mean and relative accessibility of each gene for each cluster:
 
@@ -146,9 +154,16 @@ ggsave("gene_expression_dotplot_with_dendrogram.png", combined_plot, width = 12,
 #########################################
 #########################################
 #########################################
+#########################################
+#########################################
+#########################################
+#########################################
+#########################################
+
 
 
 ## Log2FC Dotplot
+
 
 library(tidyverse)
 library(reshape2)
@@ -156,6 +171,18 @@ library(ggdendro)
 library(cowplot)
 library(patchwork)
 library(viridis)
+
+# Identify marker features
+
+Cluster.markers <- getMarkerFeatures(
+  ArchRProj = projMCS6,
+  useMatrix = "GeneScoreMatrix",
+  groupBy = "Clusters",
+  testMethod = "wilcoxon",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+)
+
+assays(Cluster.markers)
 
 # Data Preparation Steps
 mean_acc <- Cluster.markers@assays@data$Mean
@@ -177,11 +204,21 @@ acc_comb <- melted_mean_acc %>%
   left_join(melted_FDR_acc, by = c("gene", "cluster"))
 
 # Define genes of interest
-interesting_markerGenes <- c("Slc17a7", "Slc17a6", "Slc17a8", "Slc32a1", "Gad1", "Aqp4", "Dio2", "Cx3cr1", "Olig1", "Opalin")
+glut_markerGenes <- c("Cux2","Neurod1", "Neurod2", "Neurod6", "Satb2", "Tbr1")
+gaba_markerGenes <- c("Drd2", "Gad1", "Pvalb", "Sp8", "Sst", "Vip")
+microglia_markerGenes <- c("C1qa", "Ccl4", "Cd14", "Cx3cr1", "Csf1r", "Trem2")
+oligo_markerGenes <- c("Mag", "Mbp", "Olig1", "Opalin", "Pdgfra", "Ugt8a")
+endo_markerGenes <- c("Anpep", "Cldn5", "Flt1", "Fn1", "Itm2a", "Slco1a4")
+astro_markerGenes <- c("Aqp4", "Cbs", "Dio2", "Gfap", "Mlc1", "Ppp1r3c")
+
+##############################################################
+
+
+## Run the following for each set of genes of interest
 
 # Filter data for genes of interest
 acc_filtered <- acc_comb %>% 
-  filter(gene %in% interesting_markerGenes)
+  filter(gene %in% astro_markerGenes)
 
 # Prepare matrix for clustering
 mat <- acc_filtered %>%
@@ -213,12 +250,42 @@ gene_labels <- ggplot(data.frame(y = seq_along(gene_order), label = gene_order),
   theme_void() +
   theme(plot.margin = unit(c(0,0,0,0), "cm"))
 
+
+
+####################################################
+
+# Create dotplot
+#dotplot <- acc_filtered %>%
+#  filter(mean > 0, abs(Log2FC) > 0.1) %>%  # Adjust this filter as needed
+#  ggplot(aes(x = cluster, y = factor(gene, levels = rev(gene_order)), color = Log2FC, size = mean)) +
+#  geom_point() +
+#  scale_color_gradientn(colours = viridis(20), limits = c(-2, 2), # Adjust the limits to focus on the range of interest
+#                        oob = scales::squish, name = 'Log2FC') +
+#  scale_size_continuous(name = "Mean", range = c(1, 6)) +
+#  cowplot::theme_cowplot() +
+#  theme(axis.line = element_blank(),
+#        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+#        axis.text.y = element_blank(),
+#        axis.ticks.y = element_blank(),
+#        axis.title.y = element_blank(),
+#        plot.margin = unit(c(0,0,0,0), "cm"))
+
+# "astro_dotplot_with_dendrogram_log2fc_2025-01-11.png"
+
+
+#####################################################
+#####################################################
+#####################################################
+
+
+## Updated plot code to minimize less significant findings and emphasize more impactful findings
+
 # Create dotplot
 dotplot <- acc_filtered %>%
-  filter(mean > 0, abs(Log2FC) > 0.1) %>%  # Adjust this filter as needed
+  filter(mean > 0.1, abs(Log2FC) > 0.1) %>%  # Adjust this filter as needed
   ggplot(aes(x = cluster, y = factor(gene, levels = rev(gene_order)), color = Log2FC, size = mean)) +
   geom_point() +
-  scale_color_gradientn(colours = viridis(20), limits = c(-2, 2),
+  scale_color_gradientn(colours = viridis(20), limits = c(-2.5, 2.5), # Adjust the limits to focus on the range of interest
                         oob = scales::squish, name = 'Log2FC') +
   scale_size_continuous(name = "Mean", range = c(1, 6)) +
   cowplot::theme_cowplot() +
@@ -229,14 +296,96 @@ dotplot <- acc_filtered %>%
         axis.title.y = element_blank(),
         plot.margin = unit(c(0,0,0,0), "cm"))
 
+
+##########
+
 # Combine plots
 combined_plot <- (dendro + gene_labels + dotplot) +
   plot_layout(widths = c(1, 1, 4)) +
-  plot_annotation(title = "Gene Expression Dotplot with Dendrogram (Log2FC)",
+  plot_annotation(title = "Astrocyte Gene Dotplot with Dendrogram",
                   theme = theme(plot.title = element_text(hjust = 0.5)))
 
 # Display combined plot
 print(combined_plot)
 
 # Save plot
-ggsave("gene_expression_dotplot_with_dendrogram_log2fc.png", combined_plot, width = 12, height = 8, dpi = 300)
+ggsave("astrocyte_dotplot_with_dendrogram_2025-01-15.png", combined_plot, width = 12, height = 8, dpi = 300)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#####################################################
+#####################################################
+#####################################################
+
+
+## Updated plot code to minimize less significant findings and emphasize more impactful findings, dendrogram removed
+
+# Create dotplot
+dotplot <- acc_filtered %>%
+  filter(mean > 0.1, abs(Log2FC) > 0.1) %>%
+  ggplot(aes(x = cluster, y = factor(gene, levels = rev(gene_order)), color = Log2FC, size = mean)) + 
+  geom_point() +
+  scale_color_gradientn(colours = viridis(20), limits = c(-2.5, 2.5), 
+                        oob = scales::squish, name = 'Log2FC') +
+  scale_size_continuous(name = "Mean", range = c(1, 6)) +
+  cowplot::theme_cowplot() +
+  theme(axis.line = element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        axis.text.y = element_text(size = 8),  # Adjust font size for clarity
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank(),
+        plot.margin = unit(c(0, 0, 0, 0), "cm"),
+        panel.spacing = unit(0.5, "lines"),  # Adjust space between rows
+        strip.text.y = element_blank())  # Remove facet strip text if used
+
+##########
+
+# Create gene_labels plot (make sure it doesn't include redundant gene names)
+gene_labels <- ggplot(acc_filtered, aes(x = cluster, y = factor(gene, levels = rev(gene_order)))) +
+  geom_blank() +  # This removes any redundant gene names in the gene_labels plot
+  theme_void()
+
+##########
+
+# Combine plots
+combined_plot <- (gene_labels + dotplot) +
+  plot_layout(widths = c(1, 3)) +
+  plot_annotation(title = "Astrocyte Genes",
+                  theme = theme(plot.title = element_text(hjust = 0.5)))
+
+# Display combined plot
+print(combined_plot)
+
+# Save plot
+ggsave("astro_dotplot_log2fc_2025-01-15.png", combined_plot, width = 12, height = 8, dpi = 300)
+
+
+#########################################
+#########################################
+#########################################
+#########################################
+#########################################
