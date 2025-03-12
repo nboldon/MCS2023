@@ -1,25 +1,38 @@
+# Project TIN CANN
+## By: Naomi Boldon
+
 # MCS2023
 
-## Libraries.R
-## Primary libraries used
-library(ArchR)
-library(org.Mm.eg.db)
-library(BiocManager)
-library(AnnotationDbi)
-library(clusterProfiler)
-library(enrichplot)
-library(pheatmap)
 
-## Conda_Update_Dec2023
+##################################################
+##################################################
+##################################################
+
+
+## 01. The following software and package versions were used to complete the project:
+
+##################################################
+
+01_Libraries.R
+- Primary libraries used:
+    library(ArchR)
+    library(org.Mm.eg.db)
+    library(BiocManager)
+    library(AnnotationDbi)
+    library(clusterProfiler)
+    library(enrichplot)
+    library(pheatmap)
+
+01_Conda_Update_Dec2023
 Updated Beartooth conda environment for interactive session
 
-## environment_2024-02-16.yml
+01_environment_2024-02-16.yml
 Beartooth conda computing environment
 
 
-####################################################
-####################################################
-####################################################
+##################################################
+##################################################
+##################################################
 
 
 ## The following code scripts are used to complete the project:
@@ -29,22 +42,23 @@ Beartooth conda computing environment
 
 # 02. Demultiplex code
 
-## Custom code from Qi Sun at Cornell University
-## Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
+Custom code from Qi Sun at Cornell University
 
-README_demultiplex
-sciatac.py
-get_uniqList1.py
-get_uniqList2.py
-cratac_curated.txt.gz
-cellranger)_commands.py
-samplelist
-bedConvert.py
+Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
 
-cellrangerRun.sh
+02_README_demultiplex
+02_sciatac.py
+02_get_uniqList1.py
+02_get_uniqList2.py
+02_cratac_curated.txt.gz
+02_cellranger)_commands.py
+02_samplelist
+02_bedConvert.py
+
+02_cellrangerRun.sh
 - Slurm script to create Cellranger files
 
-Rename_FragFiles.R
+02_Rename_FragFiles.R
 - Renames Cellranger files; can then be moved to new folder for downstream analysis
 
 
@@ -52,23 +66,21 @@ Rename_FragFiles.R
 ##############################################
 ##############################################
 
+
 # 03. Project MCS1
-- Creates projMCS1 for downstream analysis
+Creates projMCS1 for downstream analysis
 
-
-## Code used for projMCS1:
-
-## 03_projMCS1_ArrowFiles.R
+03_projMCS1_ArrowFiles.R
 - Creates arrow files in ArchR to create project
 
-## 03_projMCS1.R
+03_projMCS1.R
 - Adds doublet scores
 - Creates dataframes for nFrags and TSS Enrichment
 - Plots QC scores 
   - Density plot for nFrags vs TSS Enrichment
   - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
 
-## QC files:
+QC files:
 - 03_TSS-vs-Frags.pdf
 - 03_TSS7_QC-MCS1.pdf
 - 03_QC_FragSize-Distro_2024-02-29.pdf
