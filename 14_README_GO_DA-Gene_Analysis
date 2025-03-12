@@ -1,11 +1,32 @@
 # 14. Gene Ontology differentially accessible marker gene analysis. 
 
-GO_Analysis_2024-08-01.R
 
-GO_Barplot.R
+## 14_GO_Analysis_2024-08-01.R
+- getMarkerFeatures, groupBy Cluster, cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+- Calls top marker genes in each cluster.
+- cc.go run for Gene Ontology results by cluster
+- cc.gos run for simplified Gene Ontology results by cluster
 
-GO_Barplot_2.R
+## 14_GO_Barplot.R
+- Reads in pairwise comparison results by cluster. 
+- enrichGO used to create GO plots, file name ex: C3_T1vsT3_top20.png
+## 14_GO_Barplot_2.R
+- Uses same code as 14_GO_Barplot.R but includes results
 
-GO_Plots_Loop.R
+## 14_C18-Subset_GO_Barplot.R
+- Reads in pairwise comparison results by C18 subclusters. 
+- enrichGO used to create GO plots, file name ex: C18.5_T124v3_top20.png
 
-C18-Subset_GO_Barplot.R
+## 14_GO_Plots2.R
+- topGOdata performs GO analysis
+    - Runs enrichment analysis with Fisher's exact test
+    - Summarizes results and extracts top GO terms
+    - creates barplots and dotplots
+- goseq performs GO analysis
+    - Summarizes top GO terms; creates barplots and dotplots
+- getBM performs GO analysis
+    - Summarizes top GO terms; creates barplots. 
+- Creates custom dotplots. 
+## 14_GO_Plots_Loop.R
+- Uses combined code from 14_GO_Plots2.R
+- Loops through pairwise comparisons by cluster and treatment group.
