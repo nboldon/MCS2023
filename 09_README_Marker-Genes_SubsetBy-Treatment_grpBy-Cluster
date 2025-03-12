@@ -1,12 +1,10 @@
+# 09. Marker genes subset by Treatment, grouped by cluster
 
-## 09. Marker genes subset by Treatment, grouped by cluster
 
-
-09_projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
+## 09_projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
 - Subsets by treatment, group by cluster
 - cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
-
-09_projMCS5_geneMarkers_byClusterTxGrp_2024-04-26.R
+## 09_projMCS5_geneMarkers_byClusterTxGrp_2024-04-26.R
 - code updated from the above
 - cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
 - Subsets by treatment, group by cluster
@@ -14,7 +12,6 @@
 - Subsets by cluster, group by treatment
 - File names ex: C1_GeneMarker_List_2024-04-08.csv & GeneMarker_List_Master_2024-04-08.csv
 
-# Marker genes that were subset by treatment group, then groupBy cluster
-# were combined into one spreadsheet using: 
-09_Combine_Spreadsheets.R
+## 09_Combine_Spreadsheets.R
+- Combines marker genes subset by treatment group groupBy cluster into one summary spreadsheet. 
 - File names ex: C1_TxMarkers_Combined.csv
