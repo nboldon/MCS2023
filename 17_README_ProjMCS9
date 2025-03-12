@@ -1,6 +1,6 @@
 # 17. ProjMCS9 
 
-## projMCS9.R
+## 17_projMCS9.R
 - Loops through all clusters making pairwise comparisons using peakMatrix
     - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
     - File ex: cluster, "_", useGroup, "vs", bgdGroup, "_Peak9_FDR-0-1_Log2FC-0-5_2024-09-12.csv"
