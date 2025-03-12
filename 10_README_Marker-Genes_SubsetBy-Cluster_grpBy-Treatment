@@ -1,3 +1,4 @@
+
 # 10. Marker genes subset by cluster, grouped by treatment
 
 
@@ -26,3 +27,22 @@
 - Uses top 200 marker genes to create heatmaps & z-scores 
 - Heatmap cutOff = "FDR <= 1 & Log2FC >=0.01"
 - Ex. file names saved: C4_TxComp_Heatmap_2024-03-21.pdf & C4_byTx_zscores_2024-03-21.csv
+
+## 10_Volcano_byCluster-Tx.R
+- Add Harmony & impute weights
+- Subset by cluster; group by tx
+- Pairwise comparisons
+- CutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+
+## 10_Dotplot.R
+- getMArkerFeatures groupBy Cluster (no subset)
+- Uses cell type-specific markers defined in the literature. 
+- Dotplot, file name ex: Ggtree_Zu-Glut2_2024-07-17.pdf
+- Combines plots, file name ex: astro_dotPlot_2024-07-22.jpeg
+
+## 10_revised_DotPlot.R
+- getMArkerFeatures groupBy Cluster (no subset)
+- Similar code to 10_Dotplot.R but displays dotplots using:
+    - Log2FC, file name ex: gene_expression_dotplot_with_dendrogram_log2fc.png
+    
+
