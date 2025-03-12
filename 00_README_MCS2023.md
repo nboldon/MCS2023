@@ -13,21 +13,23 @@
 
 ##################################################
 
+01_LICENSE
+Specifies permissions granted and copyright notice. 
+
 01_Libraries.R
-- Primary libraries used:
-    library(ArchR)
-    library(org.Mm.eg.db)
-    library(BiocManager)
-    library(AnnotationDbi)
-    library(clusterProfiler)
-    library(enrichplot)
-    library(pheatmap)
+Catelog of libraries used for the project. 
 
 01_Conda_Update_Dec2023
 Updated Beartooth conda environment for interactive session
 
-01_environment_2024-02-16.yml
+01_beartooth_environment_2024-Feb.yml
 Beartooth conda computing environment
+
+01_beartooth_environment_2024-Oct
+Beartooth conda computing environment
+
+01_local_environment_2025-Mar
+Naomi's personal computer computing environment
 
 
 ##################################################
@@ -40,51 +42,98 @@ Beartooth conda computing environment
 ##################################################
 
 
-# 02. Demultiplex code
+## 02. Demultiplex code
+
+- Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
 
 Custom code from Qi Sun at Cornell University
 
-Used to convert custom scATAC-seq library prep fragments to workable Cellranger files
+
+The script sciatac.py does two things:
+1. demultiplexing samples
+2. converting the lab custom barcodes into Cellranger 16bp barcodes (based on the Cellranger-atac whitelist file). 
+The cellranger-atac requires three fastq files:
+"sampleName_S1_L001_R1_001.fastq.gz"
+"sampleName_S1_L001_R2_001.fastq.gz"
+"sampleName_S1_L001_R3_001.fastq.gz"
+(R1 and R3 are paired end reads that can be aligned to the reference genome. R2 contains the 16bp cell barcodes.)
+
+
+Section 1. run sciatac.py to convert raw fastq data files to Cellranger-atac format 
+a. prepare the samplelist file
+See example file samplelist in the directory. It is a tab delimited text file with three columns: sampleName, bc1, bc2
+(Make sure there is no space or funky characters in the smaple names. If a sample uses multiple barcodes, use multiple lines for the sample.)
+
+b. run sciatac.py on a server with plenty of temporary storage (~2TB for ~100 billion read pairs), and >=20 cpu cores. If you are using a computer with less cpu, modify the scripts, set both "parallelSamples" and "parallelChunks" to number of CPUs. 
+
+sciatac.py -1 raw_fq_R1.gz -2 raw_R2.fq.gz -s samplelist  -o outputDirName
+
+(make sure that the file cratac_curated.txt.gz is located at the same directory as the script file sciatac.py)
+
+Section 2. run cellranger 
+basic cellranger command
+cellranger-atac count --id=WT-8h_run \
+                        --reference=/workdir/qisun/refdata-cellranger-arc-mm10-2020-A-2.0.0 \
+                        --fastqs=/workdir/qisun/out/WT-8h \
+                        --sample=WT-8h \
+                        --localcores=32 \
+                        --localmem=128
+ 
+There is a script that can prepare the batch command file, where "-i" input directory set to the directory from previous command. It would create a batch script run.sh
+cellranger_commands.py -i outputDirName -r /workdir/qisun/refdata-cellranger-arc-mm10-2020-A-2.0.0 -o run.sh
+
+To run it on a large mem gen2 server (96 cores, and 500gb ram)
+parallel -j3 < run.sh
+
+
+Appendix. curate the cellranger barcode whitelist
+The curated barcode file "cratac_curated.txt.gz" must be kept in the same directory as the script. This file is from the cellranger software directory, located in cellranger-atac-2.1.0/lib/python/atac/barcodes
+
+The file 737K-cratac-v1.txt.gz must be scrambled before use
+zcat 737K-cratac-v1.txt.gz | shuf |gzip -c > newfile.txt.gz 
+
+After scrambling, the curated list was prepared with two scripts: get_uniqList1.py and get_uniqList2.py.  get_uniqList1.py prepare about ~30,000 barcodes with hamming distance <3,  get_uniqList2.py would scan the rest of post-shuf barcodes, and add extra barcodes in case more cell barcodes are needed.. 
+
 
 02_README_demultiplex
 02_sciatac.py
 02_get_uniqList1.py
 02_get_uniqList2.py
 02_cratac_curated.txt.gz
-02_cellranger)_commands.py
+02_cellranger_commands.py
 02_samplelist
 02_bedConvert.py
 
 02_cellrangerRun.sh
-- Slurm script to create Cellranger files
+Slurm script to create Cellranger files
 
 02_Rename_FragFiles.R
-- Renames Cellranger files; can then be moved to new folder for downstream analysis
+Renames Cellranger files; can then be moved to new folder for downstream analysis
 
 
 ##############################################
 ##############################################
 ##############################################
 
+## 03. Project MCS1
 
-# 03. Project MCS1
-Creates projMCS1 for downstream analysis
+- Creates arrow files and project MCS1 for quality control and downstream analysis.
 
 03_projMCS1_ArrowFiles.R
-- Creates arrow files in ArchR to create project
+Creates arrow files in ArchR to create project
 
 03_projMCS1.R
-- Adds doublet scores
-- Creates dataframes for nFrags and TSS Enrichment
-- Plots QC scores 
-  - Density plot for nFrags vs TSS Enrichment
-  - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
+Adds doublet scores
+Creates dataframes for nFrags and TSS Enrichment
+Plots QC scores 
+  Density plot for nFrags vs TSS Enrichment
+  Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
 
 QC files:
-- 03_TSS-vs-Frags.pdf
-- 03_TSS7_QC-MCS1.pdf
-- 03_QC_FragSize-Distro_2024-02-29.pdf
-- 03_Peak-Call-Summary.pdf
+03_TSS-vs-Frags.pdf
+03_TSS7_QC-MCS1.pdf
+03_QC_FragSize-Distro_2024-02-29.pdf
+03_Peak-Call-Summary.pdf
 
 
 #############################################
@@ -95,76 +144,63 @@ QC files:
 # 04. Project MCS2
 
 
-## projMCS2.R
-- Filters doublets
-- Adds Iterative LSI
-- Adds Harmony
-- Adds Clusters
-- Creates cluster confusion matrix
+04_projMCS2.R
+Filters doublets
+Adds Iterative LSI
+Adds Harmony
+Adds Clusters
+Creates cluster confusion matrix
 
 
-## projMCS2_scEmbeddings.R
-- UMAP using LSI by sample & cluster
-- TSNE using LSI by sample & cluster
-- UMAP using Harmony by sample & cluster
-- TSNE using Harmony by sample & cluster
+04_projMCS2_scEmbeddings.R
+UMAP using LSI by sample & cluster
+TSNE using LSI by sample & cluster
+UMAP using Harmony by sample & cluster
+TSNE using Harmony by sample & cluster
 
-## Files created from projMCS2_scEmbedding.R
-04_UMAP-Sample-Clusters.pdf
-04_TSNE-Sample-Clusters.pdf
-04_UMAP2Harmony-Sample-Clusters.pdf
-04_TSNE2Harmony-Sample-Clusters.pdf
+04_Files created from projMCS2_scEmbedding.R
+    04_UMAP-Sample-Clusters.pdf
+    04_TSNE-Sample-Clusters.pdf
+    04_UMAP2Harmony-Sample-Clusters.pdf
+    04_TSNE2Harmony-Sample-Clusters.pdf
 
 
-## projMCS2_MarkerGenes.R
-## Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
-- getMarkerFeatures
-- Marker list by cluster (FDR & Log2FC)
-- Heatmaps for marker features; cowplots for all genes
+04_projMCS2_MarkerGenes.R
+GroupBy: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
+getMarkerFeatures
+Marker list by cluster (FDR & Log2FC)
+Heatmaps for marker features; cowplots for all genes
 NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
 
 ## projMCS5_MarkerGenes.R 
-## Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
-- Files saved for each cluster; ex: C1_MarkerGenes_2025-03-06.csv
+Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
+    Files saved for each cluster; ex: C1_MarkerGenes_2025-03-06.csv
 
-## Summary files created from analysis results of projMCS2_MarkerGenes.R
-- 04_Cluster_Analysis_2024-02-12.xlsm
-    - Each tab summarizes cell count information by cluster, including:
-      - cell counts by sample and cluster (incl. median TSS & nFrags per cell)
-      - normalized cell abundance percentages by sample (cells in cluster by sample divided by total cells in  sample; incl. total cell counts by sample)
-      - normalized cell abundance by treatment group (incl. total cell counts by cluster and treatment group)
-      - cell counts by cluster and genotype
-      - cell counts by cluster and sequencing lane
-      - cell counts by PCR plate (library preparation day)
-- 04_GeneMarkers_byCluster_1-31-2024.xlsx
-  - Includes cell type-specific marker gene notes from literature reviews in tabs 1 & 2
-  - There is a tab for each cluster that highlights:
-    - the top 50 marker genes, based on FDR 
-    - cell type-specific marker genes found in literature reviews
-  - There are two additional tabs for C1, C3, C8, C18, and C21 that highlight:
-    - One tab specifies the Panther GO family, molecular function, biological process, cellular component, protein class, and pathways affected by specified genes. 
-    - The other tab displays seperate bargraphs for Panther GO categories associated with molecular function, biological process, cellular component, protein class, and pathways affected by specified genes.
-- 04_MCS2023_1-31-2024.pptx
-    - Summarizes key points of interest from the above analysis
+Summary files created from analysis results of projMCS2_MarkerGenes.R
+    04_Cluster_Analysis_2024-02-12.xlsm
+        Each tab summarizes cell count information by cluster, including:
+        cell counts by sample and cluster (incl. median TSS & nFrags per cell)
+        Normalized cell abundance percentages by sample (cells in cluster by sample divided by total cells in  sample; incl. total cell counts by sample)
+      Normalized cell abundance by treatment group (incl. total cell counts by cluster and treatment group)
+      Cell counts by cluster and genotype
+      Cell counts by cluster and sequencing lane
+      Cell counts by PCR plate (library preparation day)
+    04_GeneMarkers_byCluster_1-31-2024.xlsx
+        Includes cell type-specific marker gene notes from literature reviews in tabs 1 & 2
+        There is a tab for each cluster that highlights:
+            The top 50 marker genes, based on FDR 
+            Cell type-specific marker genes found in literature reviews
+        There are two additional tabs for C1, C3, C8, C18, and C21 that highlight:
+            One tab specifies the Panther GO family, molecular function, biological process, cellular component, protein class, and pathways affected by specified genes. 
+            The other tab displays seperate bargraphs for Panther GO categories associated with molecular function, biological process, cellular component, protein class, and pathways affected by specified genes.
+    04_MCS2023_1-31-2024.pptx
+        Summarizes key points of interest from the above analysis
 
-## Heatmaps of projMCS2 by cluster from projMCS2_MarkerGenes.R
-- 04_UMAP-MarkerGenes-WO-Imputation.pdf
-- 04_GeneScores-Marker-Heatmap.pdf
-    - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
-- 04_GeneMarkers_Top50_Heatmap_1-25-2024.pdf
-
-
-## projMCS2_ArchRBrowser.R
-- Track plotting with ArchRBrowser
-- 04_Plot-Tracks-MarkerGenes_2024-04-04.pdf 
-    - Creates browser tracks for the following genes:
-    - "Aqp4", "Aldh1l1", "Mlc1", "Cbs", "Ppp1r3c", "Plcd4", "Dio2", #Astrocyte
-    - "Cldn11", "Cx3cr1", "Csf1r", "Sparc", "Trem2", "Ccl4", "Cd14", "Tyrobp", "C1qa", #Microglia
-    - "Olig1", "Mbp", "Opalin", "Mag", "Mog", "Cldn11", "Ugt8a", "Olig2", #Oligodendrocyte
-    - "Spock3", "Gad1", "Grin3a", "Adarb2", "Grik1", "Lhx6", "Pvalb", "Gad2",  #GABAergic
-    - "Sulf1", "Slc17a8", "Tshz2", "Slc17a6", "Neurod6", #Glutamatergic
-    - "Cldn5" #"CD31"DoesNotExist #Endothelial
-      
+Heatmaps of projMCS2 by cluster from projMCS2_MarkerGenes.R
+04_UMAP-MarkerGenes-WO-Imputation.pdf
+04_GeneScores-Marker-Heatmap.pdf
+    cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
+04_GeneMarkers_Top50_Heatmap_1-25-2024.pdf
 
 
 ##############################################
