@@ -412,6 +412,9 @@ The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFe
 11_projMCS7_GeneMarkers_byCellType-TxGrp_2025-01-16.R
 - Similar code to projMCS7_GeneMarkers_byCluster-TxGrp_2025-01-16.R but focuses on cell type groups
 * - Files saved ex: astro_GeneMarker_List_2025-01-16.csv
+ 
+11_CellType_TxComps.R
+- Code did not produce meaningful results
 
 
 ###############################################
@@ -517,6 +520,11 @@ Motif Enrichment
 - Cannot run code for markerRNA. 
 
 
+15_CA_Motif_Plot_byCluster.R
+- Uses motifs.csv to create a heatmap of DA Motif Count Comparison Across Clusters.
+- File: DA_Motif_Count_Comparison_2024-09-27.png
+
+
 15_normExp_projMCS7.R
 - getMarkerFeatures uses PeakMatrix, groupBy clusters
     - cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
@@ -533,6 +541,21 @@ Motif Enrichment
 - Creates Browser tracks for genes of interest
     - cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
     - File: C18-Tracks-With-PeakFeatures_2024-08-07.pdf & Peak-C3-T1vsT3-Tracks_2024-09-16.pdf
+    
+
+15_Peak_TxComps-byCluster_2024-09-09.R
+- Loops through all clusters to make treatment group pairwise comparisons
+    - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
+    - File name ex: cluster, "_", useGroup, "vs", bgdGroup, "_Peak_FDR-0-1_Log2FC-0-5_2024-09-09.csv"
+- Combines treatment group cluster-specific comparisons
+    - File: C18_All-T3vT_TxMarkers_Combined_2024-07-06.csv
+    - File ex: C1_MCS6-TxComp_geneMarkersCombined_2024-07-06.csv
+    - Sorts rows in results file, file: C18-ordered_PairwiseCombined_2024-07-08.csv
+- Research Question 6.2 combines all files for C3 pairwise comparisons.
+    - File: C3_Ordered_PairwiseCombined_2024-07-08.csv
+    
+15_Peak_heatmaps_2024-09-11.R
+- subset by Cluster, groupBy treatment; peakAnnoErichment for heatmap did not run.
     
 
 ###############################################
@@ -561,12 +584,106 @@ Motif Enrichment
 - Loop code does not run.
 
 
+16_BetterBrowserTracks.R
+- addCoAccessibility & color palette updates to previous browser track code
+- Loops through all clusters and treatment comparison regions of interest. 
+- plotBrowserTrack used to assess fragment coverage depth across different genomic regions.
+- File name ex: "Coverage_", region_name, "_", Sys.Date(), ".pdf"
+- getCounts() or getGroupBW() allows for direct extraction of fragment counts for regions of interest. 
+- addGroupCoverages can precompute the group coverages for each treatment group.
+    - This can then be visualized on Browser tracks. 
+- getGroupBW can also be used to export BigWig files normalized by fragment count (normMethod = "nFrags"). 
+    - BigWig files can then be loaded into genome browser (IGV) to view coverage depth. 
+- getFraments is used to extract raw fragment data for genomic regions of interest. 
+
+
+16_fragCounts_GenomeWide_TxComps.R
+- Loads fragments by treatment using sample, "_fragments.tsv.gz" files.
+    - Adds treatment label; loads fragments for each treatment group. 
+    - Creates bin and fragment counts by chromosome.
+    - Plots fragment count differences between treatment groups. 
+    - Can adjust for multiple chromosomes. 
+- Loop to make pairwise tratment group comparisons using chr 16 & 17.
+    - File name ex: Fragment_Count_Difference_t1_vs_t2_", chr, "_2024-09-25.png
+- Plots fragment counts of rank distributions by chromosome and treatment.
+    - Saved by chr, file ex: "rank_distribution_", treatment, "_", chr, "_2024-09-25.png"
+    - Rank distro by fragment counts and treatment, file ex: "Rank Distribution of Fragment Counts -", treatment"
+
+
+16_fragCounts_byPeak.R
+- To save the number of frags by cluster:
+    - Uses getMarkerFeatures, groupBy Clusters, cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+    - Creates dataframe of marker peaks by cluster, file name ex: markersPeaks_List_", clusterName, "_2024-09-24.csv
+    - getGroupSE extracts group-wise fragment counts for peaks
+    - Fragment counts, grouped by clusters, with peak information. 
+        - File: fragmentCounts_PeakMatrix_2024-09-24.csv
+- To save the number of frags by treatment and cluster
+    - groupBy Clusters_Treatment
+    - File: fragmentCounts_Clusters_Treatment_2024-09-24.csv
+- Plots peak frag counts by cluster.
+    - File: Density_RankPlot_Cluster_", cluster, "_2024-09-26.png
+- Code to plot rank orders of fragment counts by cluster and treatment group
+    - Doesn't actually plot the frags in rank order
+    
+
+16_peakFrags.R
+- Creates an index of individual sample cells and defines regions of interest
+- getMatrixFromProject extracts the PeakMatrix using rowRanges and subsetByOverlaps by regions of interest. 
+- Subsets by sample and sums fragments
+- Creates a dataframe by looping over each sample. 
+    - Includes number of single cells, median fragments, median TSS Enrichment, total fragment counts.
+    - File: sample_statistics.csv
+- Loop first runs over all samples and 1 region of interest (file: app_fragment_counts.csv), then all samples and all chr 16 & 17 regions of interest.
+    - File name ex: region_name, "_fragment_counts.csv"
+16_geneFrags.R
+- Duplicate code to 16_peakFrags.R
+16_geneFragsLoop.R
+- Alternate loop code to: 16_geneFrags.R
+- No files generated, for code reference only.
+16_peakFragsLoop.R
+- Additional alternate loop code to: 16_peakFrags.R
+- No files generated for code reference only.
+
+
+16_getMatrix_MCS1.R
+- Extracts and saves RDS files for tile and gene matrices. 
+- Code to extract data from these matrices. 
+- Combines extracted data and creates data frames. 
+    - File: combined_TileData_projMCS1.csv & combined_GeneData_projMCS1.csv
+    
+    
+16_nFrags-TSS_byTx-Cluster.R
+- Subset by cluster, groupBy treatment.
+- Violin plot colorBy cell data using log10(nFrags).
+    - File: C25_nFrags-byTx_2024-08-13
+- Violin plot colorBy cell data using TSS Enrichment.
+    - File: C25_TSS-byTx_2024-08-13
+    
+
+16_normPeakStats_2024-09-08.R
+- Combines individual files into one to normalize fragment counts.
+- Normalized by dividing the number of gene fragments by total number of fragments in sample. 
+- Uses file pattern = "fragment_counts.*\\.csv") & sample_statistics.csv
+- Not used to generate results; for code reference only. 
+
+16_peak_fragCounts_byTx_2024-09-18.R
+- Loop for treatment group pairwise comparison using multiple genomic regions of interest. 
+- Loop creates a dataframe to store treatement group indexes, extracts PeakMatrix, rowRanges, subsets by peak overlaps, and sums total fragments. 
+    - File name ex: region_name, "_peakFrag_counts_byTx_2024-09-18.csv"
+- Loop calls previous files created, combines results by treatment group. 
+    - File name ex: combined_results, "combined_peakFrag_counts_byTx_2024-09-17.csv"
+- Loop calls previous files created and sample_statistics.csv; groups samples by treatment, and merges data from the 2 files. 
+    - Ratio for each fragment count added to a new column in the dataframe and reordered by treatment. 
+    - File: combined_normPeaks_statistics_with_treatment_2024-09-17.csv
+
+
+
 ###############################################
 ###############################################
 ###############################################
 
 
-## 17. ProjMCS9 
+## 17. ProjMCS9 Peak matrix pairwise comparisons
 
 projMCS9.R
 - Loops through all clusters making pairwise comparisons using peakMatrix
@@ -586,6 +703,46 @@ projMCS9.R
 ###############################################
 
 
+## 18. Cluster 18 Subset
+
+18_C18_Subset.R
+- subsetArchRProject subsets cluster 18 cells from all other cells. 
+- addIterativeLSI, addHarmony, addClusters completed for the subset.
+- Confusion matrix created, file: C18ArchRSubset_Clusters_2024-06-19.csv
+- UMAP and tSNE single cell embeddings plotted. 
+    - Files: UMAP-Sample-Clusters_C18ArchRSubset_2024-06-19.pdf & TSNE-Sample-Clusters_C18ArchRSubset_2024-06-19.pdf
+- Harmony added to single cell embeddings.
+    - Files: UMAP2Harmony-Sample-Clusters_C18ArchRSubset_2024-06-19.pdf & TSNE2Harmony-Sample-Clusters_C18ArchRSubset_2024-06-19.pdf
+- getMarkerFeatures groupBy clusters; cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
+    - File name ex: i, "_C18ArchRSubset_2024-06-19.csv"
+- UMAPs for genes of interest created, file: GeneScores-Marker-Heatmap_C18ArchRSubset_2024-06-19.pdf
+- UMAP for genes of interest before imputation, file: UMAP-MarkerGenes-WO-Imputation_C18ArchRSubset_2024-06-19.pdf.
+- UMAP for genes of interest after applying MAGIC to impute gene scores, file: UMAP-MarkerGenes-W-Imputation_C18ArchRSubset_2024-06-19.pdf
+- Additional UMAPs created for genes of interest: UMAP-RadialGliaMarkerGenes-W-Imputation_C18ArchRSubset_2024-06-21.pdf
+- UMAP highlights Ts cells, file: UMAP_T3_C18ArchRSubset_2024-06-21.pdf.
+
+C18_Subset_TxComps_byCluster.R
+- Harmony added, subset by subcluster, assigns treatment groups. 
+
+C18_TxComps_byCluster.R
+- Addresses Research Question 3
+    - Harmony added, subset by subcluster, treatment group assigned, getMarkerFeatures groupBytreatment, cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5").
+    - File name ex: C18.18_TxComp_FDR-0-1_Log2FC-0-5_2024-07-25.csv
+- Addresses Research Question 5
+    - Harmony added, subset by subcluster, treatment group assigned, getMarkerFeatures by treatment group pairwise comparison, cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5").
+    - File name ex: C18.18_T1vsT2Comp_FDR-0-1_Log2FC-0-5_2024-07-24.csv
+- Reads pairwise comparison spreadsheets into a dataframe. 
+    - File name ex: C18.18-TxComp_geneMarkersCombined_2024-07-25.csv
+    
+
+C18_T1-2-4v3_byCluster_2024-07-31.R
+- Follows code workflow from C18_TxComps_byCluster pairwise comparison, but analyzes specific differences between combined groups T1, T2, and T4 compared to T3.
+
+
+###############################################
+###############################################
+###############################################
+
 # 14. Volcano Plots
 
 Volcano_byCluster-Tx.R
@@ -604,81 +761,6 @@ Volcano_byCluster-Tx.R
 ###############################################
 ###############################################
 ###############################################
-
-
-
-## 09. Project MCS7 
-
-## ProjMCS7 - Peak Matrix and motif analysis
-
-projMCS7.R
-
-normExp_projMCS7.R
-
-peakVSmatrix.R
-
-
-######################################################################################
-######################################################################################
-######################################################################################
-
-
-## 10. Project MCS9
-
-## ProjMCS9 - Peak & fragment count analysis
-
-projMCS9.R
-
-BetterBrowserTracks.R
-
-Peak_TxComps-byCluster_2024-09-09.R
-
-Peak_heatmaps_2024-09-11.R
-
-fragCounts_GenomeWide_TxComps.R
-
-fragCounts_byPeak.R
-
-geneFrags.R
-
-geneFragsLoop.R
-
-getMatrix_MCS1.R
-
-nFrags-TSS_byTx-Cluster.R
-
-normPeakStats_2024-09-08.R
-
-peakFrags.R
-
-peakFragsLoop.R
-
-peak_fragCounts_byTx_2024-09-18.R
-
-peaksVSmotifs.R
-
-
-######################################################################################
-######################################################################################
-######################################################################################
-
-
-## 11. Cluster 18 Subset
-
-C18_Subset.R
-
-C18_Subset_TxComps_byCluster.R
-
-C18_Subset_GO_Barplot.R
-
-C18_TxComps_byCluster.R
-
-C18_T1-2-4v3_byCluster_2024-07-31.R
-
-
-######################################################################################
-######################################################################################
-######################################################################################
 
 
 ## 12. GO Analysis
