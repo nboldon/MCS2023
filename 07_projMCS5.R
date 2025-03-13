@@ -1,3 +1,18 @@
+## 07_projMCS5.R
+- Adds peak matrix
+- Identifies marker peaks by cluster
+  - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
+- Plots marker peaks
+  - cutOff = "FDR<=0.01 & Log2FC>=1.25"
+- Adds motif annotations
+  - motifSet = "cisbp"
+NOTE: The 07_projMCS5.R code did not use abs(Log2FC)
+The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFeatures before applying cutoffs
+
+
+
+
+
 #Setup an interactive session
 salloc --account=eon -t 1-00:00 --mem=128G --nodes=2 --ntasks-per-node=16
 
