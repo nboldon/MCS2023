@@ -6,8 +6,8 @@
 - TSNE using Harmony by sample & cluster
 
 
-## Files created from projMCS2_scEmbedding.R
-# Zenodo DOI: 10.5281/zenodo.14984470
+# Files created from projMCS2_scEmbedding.R
+## Zenodo DOI: 10.5281/zenodo.14984470
 
 04_UMAP-Sample-Clusters.pdf
 04_TSNE-Sample-Clusters.pdf
