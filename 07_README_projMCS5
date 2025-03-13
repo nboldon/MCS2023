@@ -1,9 +1,12 @@
 # 07. Project MCS5
 
+- Zenodo DOI: 10.5281/zenodo.14985377
+
 - Adds peak matrix and analyzes marker genes and peaks by cluster. 
 
 
 ## 07_projMCS5.R
+
 - Adds peak matrix
 - Identifies marker peaks by cluster
   - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
@@ -14,32 +17,46 @@
 NOTE: The 07_projMCS5.R code did not use abs(Log2FC)
 The 07_projMCS5-w-ABS-Log2FC.R code accommodates for that and reruns getMarkerFeatures before applying cutoffs
 
+
 ## 07_projMCS5_Top50.R
+
 - No subset, groupBy cluster, cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
     - File name ex: GeneMarker_List_Master.csv & C1_GeneMarker_List.csv
 - Filters top genes and plots heatmap.
     - File: GeneMarkers_Top50_1-25-2024.pdf
 
+
 ## 07_projMCS5-w-ABS-Log2FC.R
+
 - Identifies marker peaks by cluster
   - cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
   - 07_Peak_markerList_2025-03-06.csv
 - Plots marker peaks
   - cutOff = "FDR<=0.01 & abs(Log2FC)>=1.25"
-  - '07_Peak-Marker-Heatmap_2025-03-06.pdf'
+  - Plot file: 07_Peak-Marker-Heatmap_2025-03-06.pdf
+  - File: 07_Peak_markerList_2025-03-06.csv
+
 
 ## 07_DESeq2.R
+
 - Code does not run. 
 
 
 ## 07_projMCS5_ArchRBrowser.R
+
 - Additional browser track gene regions of interest
 - Subset by treatment group
 - C18 Subcluster subset by treatment group
-- Files generated using this code:
+- File ex:
   - 07_Browser-Tracks_C18-grpByTx_2024-06-05.pdf
   - 07_Browser-Tracks_T3-grpByClusters_2024-06-05.pdf
   
+  
 ## 07_Seurat_DotPlot.R
+
 - Code does not run. 
 
+
+## Summary files:
+
+- 07_MCS2023_2024-02-14.pptx
