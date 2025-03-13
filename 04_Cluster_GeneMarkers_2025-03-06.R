@@ -1,3 +1,4 @@
+## - Uses 04_projMCS2_MarkerGenes.R code, but calculates abs(Log2FC)
 
 
 #Load libraries
