@@ -1,3 +1,17 @@
+## 04_projMCS2_ArchRBrowser.R
+
+- Track plotting with ArchRBrowser
+- 04_Plot-Tracks-MarkerGenes_2024-04-04.pdf 
+    - Creates browser tracks for the following genes:
+    - "Aqp4", "Aldh1l1", "Mlc1", "Cbs", "Ppp1r3c", "Plcd4", "Dio2", #Astrocyte
+    - "Cldn11", "Cx3cr1", "Csf1r", "Sparc", "Trem2", "Ccl4", "Cd14", "Tyrobp", "C1qa", #Microglia
+    - "Olig1", "Mbp", "Opalin", "Mag", "Mog", "Cldn11", "Ugt8a", "Olig2", #Oligodendrocyte
+    - "Spock3", "Gad1", "Grin3a", "Adarb2", "Grik1", "Lhx6", "Pvalb", "Gad2",  #GABAergic
+    - "Sulf1", "Slc17a8", "Tshz2", "Slc17a6", "Neurod6", #Glutamatergic
+    - "Cldn5" #"CD31"DoesNotExist #Endothelial
+
+
+
 #Setup an interactive session
 salloc --account=eon -t 1-00:00 --mem=64G --nodes=1 --ntasks-per-node=16
 
