@@ -1,3 +1,5 @@
+## Beartooth conda computing environment
+
 #Additional setup
 setwd("/project/eon/nboldon/MCS2023/Analysis")
 addArchRGenome("mm10")
