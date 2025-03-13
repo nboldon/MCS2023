@@ -1,3 +1,12 @@
+## 07_projMCS5_Top50.R
+- No subset, groupBy cluster, cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
+    - File name ex: GeneMarker_List_Master.csv & C1_GeneMarker_List.csv
+- Filters top genes and plots heatmap.
+    - File: GeneMarkers_Top50_1-25-2024.pdf
+
+
+
+
 #Setup an interactive session
 salloc --account=eon -t 1-00:00 --mem=128G --nodes=2 --ntasks-per-node=16
 
