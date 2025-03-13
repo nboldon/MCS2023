@@ -1,3 +1,7 @@
+- Highlights treatment group cells of interest on UMAPs.
+    - plotEmbedding uses colorBy = cellColData, name = treatment
+    - Plots specific colors by treatment group. 
+
 
 
 #Load libraries
