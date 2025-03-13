@@ -1,3 +1,15 @@
+## 07_projMCS5_ArchRBrowser.R
+- Additional browser track gene regions of interest
+- Subset by treatment group
+- C18 Subcluster subset by treatment group
+- Files generated using this code:
+  - 07_Browser-Tracks_C18-grpByTx_2024-06-05.pdf
+  - 07_Browser-Tracks_T3-grpByClusters_2024-06-05.pdf
+
+
+
+
+
 #Setup an interactive session
 salloc --account=eon -t 0-06:00:00 --mem=128G --nodes=2 --ntasks-per-node=16
 
