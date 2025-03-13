@@ -56,10 +56,10 @@ data_combined$Comparison <- factor(data_combined$Comparison,
                                               "Ts vs. Ts+", "Total Cells"))
 
 # Define custom colors for the comparisons and total cells
-colors <- c("2N/2N+ vs. Ts/Ts+" = "#56B4E9",
-            "2N+/Ts+ vs. 2N/Ts" = "#F0E442",
-            "Ts vs. Ts+" = "#009E73",
-            "Total Cells" = "#D55E00")
+colors <- c("2N/2N+ vs. Ts/Ts+" = "#440154",
+            "2N+/Ts+ vs. 2N/Ts" = "#31688EFF",
+            "Ts vs. Ts+" = "#35B779FF",
+            "Total Cells" = "#FDE725FF")
 
 # Create new positions for the bars
 data_combined <- data_combined %>%
@@ -93,7 +93,7 @@ ggplot(data_combined, aes(fill = Comparison)) +
                         name = "Total Cell Count")
   ) +
   labs(
-    title = "C18 Subset DA Genes and Total Cell Counts per Cluster",
+    title = "C18 Subset DA Genes and Total Cell Counts by Cluster",
     x = "Cluster",
     fill = "Comparison"
   ) +
@@ -102,3 +102,4 @@ ggplot(data_combined, aes(fill = Comparison)) +
     axis.text.x = element_text(angle = 45, hjust = 1),
     legend.position = "right"
   )
+
