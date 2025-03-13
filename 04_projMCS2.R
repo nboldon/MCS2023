@@ -1,3 +1,12 @@
+## 04_projMCS2.R
+- Filters doublets
+- Adds Iterative LSI
+- Adds Harmony
+- Adds Clusters
+- Creates cluster confusion matrix
+
+
+
 #Setup an interactive session
 salloc --account=eon -t 1-00:00 --mem=64G --nodes=1 --ntasks-per-node=16
 
