@@ -1,3 +1,12 @@
+## 03_projMCS1.R
+- Adds doublet scores
+- Creates dataframes for nFrags and TSS Enrichment
+- Plots QC scores 
+    - Density plot for nFrags vs TSS Enrichment
+    - Ridge and violin plots for nFrags and TSS Enrichment individually plotted)
+
+
+
 #Create Project 1
 
 ArrowFiles <- list.files("/project/eon/nboldon/MCS2023/fragAnalysis_TSS7", pattern=".arrow$")
