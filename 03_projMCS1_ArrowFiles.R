@@ -1,3 +1,8 @@
+## 03_projMCS1_ArrowFiles.R
+- Creates arrow files in ArchR to create project
+
+
+
 #Setup an interactive session
 salloc --account=eon -t 1-00:00 --mem=128G --nodes=2 --ntasks-per-node=16
 
