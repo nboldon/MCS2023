@@ -1,5 +1,5 @@
 #Setup an interactive session
-salloc --account=eon -t 1-00:00 --mem=64G --nodes=1 --ntasks-per-node=16
+salloc --account=eon -t 0-08:00:00 --mem=256G --nodes=1 --ntasks-per-node=16
 
 #Updated conda env 12-2023
 module load miniconda3/23.1.0
@@ -21,7 +21,7 @@ addArchRGenome("mm10")
 addArchRThreads(threads = 16)
 
 #Load project
-projMCS4 <- loadArchRProject(path = "/project/eon/nboldon/MCS2023/Save-ProjMCS4", force = FALSE, showLogo = FALSE)
+projMCS7 <- loadArchRProject(path = "/project/eon/nboldon/MCS2023/Save-ProjMCS7", force = FALSE, showLogo = FALSE)
 
 ############################################
 ############################################
@@ -112,6 +112,26 @@ grid::grid.draw(p$Slc32a1)
 # Save
 plotPDF(p, name = "C18-Tracks-With-PeakFeatures_2024-08-07", width = 5, height = 5, ArchRProj = projMCS7, addDOC = FALSE)
 
+
+############
+
+region <- GRanges(
+  seqnames = "chr16",  # Replace with the correct chromosome
+  ranges = IRanges(start = 84985335, end = 85173989)
+)
+
+p <- plotBrowserTrack(
+  ArchRProj = projMCS7, 
+  groupBy = "Sample", 
+  region = region,
+  normMethod = nFrags,
+  features =  getMarkers(markersPeaks, cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5", returnGR = TRUE)["C18"],
+  upstream = 2000,
+  downstream = 2000
+)
+
+plotPDF(p, name = "App-Tracks-With-PeakFeatures_2024-08-29", width = 5, height = 5, ArchRProj = projMCS7, addDOC = FALSE)
+
 ############################################
 ############################################
 
@@ -143,42 +163,10 @@ plotPDF(pma, pv, name = "C18-vs-C22-Markers-MA-Volcano_2024-08-07", width = 5, h
 
 ############################################
 ############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-
-
 
 # Add motif annotations
 
 projMCS7 <- addMotifAnnotations(ArchRProj = projMCS7, motifSet = "cisbp", name = "Motif")
-
-
-#"cisbp" refers to the Cis-Binding Protein Database (CisBP); a database that contains information 
-#about transcription factor (TF) binding motifs. 
-#By specifying motifSet = "cisbp", you are telling the addMotifAnnotations function in ArchR to use 
-#the transcription factor binding motifs from the CisBP database to annotate your peaks with known TF motifs.
-#This allows ArchR to determine which transcription factors might be regulating specific regions in your dataset 
-#based on the binding motifs found within your peaks.
-
-
-
-############################################
-
 
 motifsUp <- peakAnnoEnrichment(
     seMarker = markerTest, #Completed earlier for C18
@@ -250,13 +238,6 @@ plotPDF(ggUp, ggDo, name = "C18-vs-C22-Markers-Motifs-Enriched_2024-08-07", widt
 ############################################
 ############################################
 ############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-############################################
-
 
 
 # Motif enrichment in marker peaks
@@ -276,6 +257,170 @@ ComplexHeatmap::draw(heatmapEM, heatmap_legend_side = "bot", annotation_legend_s
 
 plotPDF(heatmapEM, name = "Motifs-Enriched-Marker-Heatmap_2024-08-07", width = 8, height = 6, ArchRProj = projMCS7, addDOC = FALSE)
 
+
+############################################
+############################################
+
+
+## Motif heatmaps by treatment group
+
+
+# Check treatment assignment
+unique(projMCS7$Sample)  # Validate the sample IDs
+treatment <- projMCS7$Sample
+
+
+# Specify which treatment group each sample is in:
+
+# t1 = 2N
+# t2 = 2N+
+# t3 = Ts
+# t4 = Ts+
+
+treatment <- projMCS7$Sample
+
+treatment <- gsub("C302_", "t1", treatment)
+treatment <- gsub("C306_", "t1", treatment)
+treatment <- gsub("C309_", "t1", treatment)
+treatment <- gsub("C318_", "t1", treatment)
+treatment <- gsub("C323_", "t1", treatment)
+treatment <- gsub("C328_", "t1", treatment)
+treatment <- gsub("C332_", "t1", treatment)
+treatment <- gsub("C337_", "t1", treatment)
+treatment <- gsub("C339_", "t1", treatment)
+treatment <- gsub("C346_", "t1", treatment)
+treatment <- gsub("C351_", "t1", treatment)
+treatment <- gsub("C353_", "t1", treatment)
+treatment <- gsub("C360_", "t1", treatment)
+treatment <- gsub("C304_", "t2", treatment)
+treatment <- gsub("C308_", "t2", treatment)
+treatment <- gsub("C312_", "t2", treatment)
+treatment <- gsub("C349_", "t2", treatment)
+treatment <- gsub("C315_", "t2", treatment)
+treatment <- gsub("C321_", "t2", treatment)
+treatment <- gsub("C324_", "t2", treatment)
+treatment <- gsub("C355_", "t2", treatment)
+treatment <- gsub("C327_", "t2", treatment)
+treatment <- gsub("C330_", "t2", treatment)
+treatment <- gsub("C333_", "t2", treatment)
+treatment <- gsub("C358_", "t2", treatment)
+treatment <- gsub("C336_", "t2", treatment)
+treatment <- gsub("C342_", "t2", treatment)
+treatment <- gsub("C348_", "t2", treatment)
+treatment <- gsub("C362_", "t2", treatment)
+treatment <- gsub("C305_", "t3", treatment)
+treatment <- gsub("C307_", "t3", treatment)
+treatment <- gsub("C313_", "t3", treatment)
+treatment <- gsub("C350_", "t3", treatment)
+treatment <- gsub("C316_", "t3", treatment)
+treatment <- gsub("C320_", "t3", treatment)
+treatment <- gsub("C322_", "t3", treatment)
+treatment <- gsub("C352_", "t3", treatment)
+treatment <- gsub("C325_", "t3", treatment)
+treatment <- gsub("C334_", "t3", treatment)
+treatment <- gsub("C359_", "t3", treatment)
+treatment <- gsub("C340_", "t3", treatment)
+treatment <- gsub("C341_", "t3", treatment)
+treatment <- gsub("C345_", "t3", treatment)
+treatment <- gsub("C364_", "t3", treatment)
+treatment <- gsub("C301_", "t4", treatment)
+treatment <- gsub("C303_", "t4", treatment)
+treatment <- gsub("C310_", "t4", treatment)
+treatment <- gsub("C314_", "t4", treatment)
+treatment <- gsub("C319_", "t4", treatment)
+treatment <- gsub("C335_", "t4", treatment)
+treatment <- gsub("C338_", "t4", treatment)
+treatment <- gsub("C344_", "t4", treatment)
+treatment <- gsub("C354_", "t4", treatment)
+treatment <- gsub("C356_", "t4", treatment)
+treatment <- gsub("C361_", "t4", treatment)
+treatment <- gsub("C363_", "t4", treatment)
+
+# Check to make sure it worked
+unique(treatment)
+
+# Assign the treatment to the actual project
+projMCS7$treatment <- treatment
+
+# Check that this worked - if not, make sure the previous line was run successfully
+head(projMCS7$treatment)
+
+# Add treatment to ArchR project
+projMCS7$treatment <- treatment
+
+# Validate treatment assignment
+message("Unique treatments: ", unique(projMCS7$treatment))
+table(projMCS7$treatment)  # Check the distribution of cells in each treatment group
+
+# Proceed with splitting and analysis
+treatmentGroups <- unique(projMCS7$treatment)
+markerFeaturesList <- list()
+
+for (group in treatmentGroups) {
+  message("Processing treatment group: ", group)
+  cellsForGroup <- projMCS7$cellNames[projMCS7$treatment == group]
+  message("Number of cells in group ", group, ": ", length(cellsForGroup))
+  
+  # Subset ArchR project
+  subsetProj <- subsetArchRProject(
+    ArchRProj = projMCS7,
+    cells = projMCS7$cellNames[projMCS7$treatment == group],
+    outputDirectory = paste0("ArchRSubset_", group),
+    force = TRUE
+  )
+  
+  # Run getMarkerFeatures
+  markerFeatures <- getMarkerFeatures(
+    ArchRProj = subsetProj,
+    useMatrix = "PeakMatrix",
+    groupBy = "Clusters",  # Use "Clusters" or the relevant column
+    bias = c("TSSEnrichment", "log10(nFrags)"),
+    testMethod = "wilcoxon"
+  )
+  
+  # Store results
+  markerFeaturesList[[group]] <- markerFeatures
+}
+
+# Create heatmaps
+for (group in names(markerFeaturesList)) {
+  heatmap <- plotMarkerHeatmap(
+    seMarker = markerFeaturesList[[group]],
+    cutOff = "FDR <= 0.05 & Log2FC >= 0.5",
+    transpose = TRUE
+  )
+  
+  # Save heatmap
+  pdf(paste0("Heatmap_", group, ".pdf"))
+  print(heatmap)
+  dev.off()
+}
+
+
+####Motif heatmaps all look the same after subsetting by treatment group
+
+
+# Example for a specific treatment group
+group <- "t2"  # Change as needed
+subsetProj <- subsetArchRProject(
+  ArchRProj = projMCS7,
+  cells = projMCS7$cellNames[projMCS7$treatment == group],
+  force = TRUE
+)
+enrichMotifs <- peakAnnoEnrichment(
+  seMarker = markersPeaks,
+  ArchRProj = subsetProj,
+  peakAnnotation = "Motif",
+  cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+)
+heatmapEM <- plotEnrichHeatmap(enrichMotifs, n = 7, transpose = TRUE)
+ComplexHeatmap::draw(heatmapEM, heatmap_legend_side = "bot", annotation_legend_side = "bot")
+
+
+
+
+############################################
+############################################
 ############################################
 ############################################
 
