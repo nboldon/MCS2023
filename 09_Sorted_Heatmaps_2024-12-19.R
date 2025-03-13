@@ -101,12 +101,15 @@ dev.off()
 ###########################
 ###########################
 ###########################
+###########################
+###########################
+###########################
 
 ## Ordered by treatment group
 
 
 # Read the CSV file
-mat <- read.csv("./C1_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
+mat <- read.csv("/Volumes/DataBox/MCS2023/Tx_Comp/C3_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
 
 # Check the structure of your data
 str(mat)
@@ -121,14 +124,14 @@ treatment_labels <- c("2N", "2N+", "Ts", "Ts+")  # New labels for treatments
 annotation_df <- data.frame(Treatment = factor(c("2N", "2N+", "Ts", "Ts+"), levels = treatment_labels))
 rownames(annotation_df) <- colnames(sorted_mat)
 
-# Create a color palette for the heatmap
-color_palette <- colorRampPalette(c("navy", "white", "red"))(50)
+color_palette <- colorRampPalette(c("#1F9E89FF", "white", "#440154FF"))(100)
+color_breaks <- seq(min(combined_matrix, na.rm = TRUE), max(combined_matrix, na.rm = TRUE), length.out = 101)
 
-# Create a color mapping for treatment groups (optional, adjust colors as needed)
-annotation_colors <- list(Treatment = c("2N" = "lightblue", "2N+" = "lightgreen", "Ts" = "orange", "Ts+" = "pink"))
+# Create a color mapping for treatment groups 
+annotation_colors <- list(Treatment = c("2N" = "#440154", "2N+" = "#31688EFF", "Ts" = "#35B779FF", "Ts+" = "#FDE725FF"))
 
 # Create a PDF for the heatmap plot
-pdf(file = "C1_byTx_sorted_heatmap_by_t1_no_dendrogram_2024-10-16.pdf", width = 7, height = 32)
+pdf(file = "C3_byTx_sorted_heatmap_by_t1_no_dendrogram_2024-12-19.pdf", width = 7, height = 32)
 
 # Create the pheatmap with updated treatment labels without clustering
 pheatmap_result <- pheatmap(
@@ -137,7 +140,7 @@ pheatmap_result <- pheatmap(
   cluster_cols = FALSE,  # Disable column clustering
   cluster_rows = FALSE,  # Disable row clustering to show sorted order
   show_colnames = TRUE,  # Show column names
-  main = "Cluster 1 Heatmap of Gene Accessibility (Sorted by t1)",
+  main = "Cluster 3 Heatmap of Gene Accessibility (Sorted by 2N)",
   color = color_palette,
   fontsize = 10, cellwidth = 10, cellheight = 10,
   annotation_col = annotation_df,  # Add treatment group labels
@@ -155,11 +158,101 @@ dev.off()
 ########################
 
 
+
+## Ordered by treatment group - loop through all clusters and treatment groups
+
+
+setwd("/Volumes/DataBox/Heatmap_Comps")
+
+# Define clusters and treatment groups
+clusters <- paste0("C", 1:25)
+treatment_groups <- c("t1", "t2", "t3", "t4")  # Corresponding to "2N", "2N+", "Ts", "Ts+"
+treatment_labels <- c("2N", "2N+", "Ts", "Ts+")
+
+# Define the file path template
+file_path_template <- "/Volumes/DataBox/MCS2023/Tx_Comp/%s_byTx_zscores_2024-03-21.csv"
+
+# Loop through all clusters
+for (cluster in clusters) {
+  # Construct the file path for the current cluster
+  file_path <- sprintf(file_path_template, cluster)
+  
+  # Check if the file exists
+  if (!file.exists(file_path)) {
+    cat(paste("File not found for", cluster, "- skipping.\n"))
+    next  # Skip to the next cluster if the file doesn't exist
+  }
+  
+  # Read the CSV file for the current cluster
+  mat <- read.csv(file_path, header = TRUE, row.names = 1, check.names = FALSE)
+  
+  # Loop through each treatment group
+  for (treatment in treatment_groups) {
+    # Check if the treatment group exists in the data
+    if (!(treatment %in% colnames(mat))) {
+      cat(paste("Treatment group", treatment, "not found for", cluster, "- skipping.\n"))
+      next
+    }
+    
+    # Sort the data based on the current treatment group
+    sorted_mat <- mat[order(mat[[treatment]], decreasing = TRUE), ]
+    
+    # Ensure column names align with annotation_df
+    colnames(sorted_mat) <- treatment_labels  # Replace column names with treatment labels
+    
+    # Create a data frame for column annotations
+    annotation_df <- data.frame(Treatment = colnames(sorted_mat))
+    rownames(annotation_df) <- colnames(sorted_mat)  # Match row names to column names
+    
+    # Define color settings
+    color_palette <- colorRampPalette(c("#1F9E89FF", "white", "#440154FF"))(100)
+    color_breaks <- seq(min(sorted_mat, na.rm = TRUE), max(sorted_mat, na.rm = TRUE), length.out = 101)
+    annotation_colors <- list(Treatment = c("2N" = "#440154", "2N+" = "#31688EFF", "Ts" = "#35B779FF", "Ts+" = "#FDE725FF"))
+    
+    # Save the heatmap as a JPG file
+    output_file <- paste0(cluster, "_sorted_heatmap_by_", treatment, "_2024-12-19.jpg")
+    jpeg(file = output_file, width = 1200, height = 4200, res = 150)
+    
+    # Generate the heatmap
+    pheatmap(
+      sorted_mat,
+      scale = "none",  # No scaling to maintain the original values
+      cluster_cols = FALSE,  # Disable column clustering
+      cluster_rows = FALSE,  # Disable row clustering to show sorted order
+      show_colnames = TRUE,  # Show column names
+      main = paste("Cluster", gsub("C", "", cluster), "Heatmap (Sorted by", treatment, ")"),
+      color = color_palette,
+      fontsize = 10, cellwidth = 10, cellheight = 10,
+      annotation_col = annotation_df,  # Add treatment group labels
+      annotation_colors = annotation_colors,  # Use colors for the annotations
+      display_numbers = FALSE  # Disable displaying numbers in the heatmap
+    )
+    
+    # Close the graphics device
+    dev.off()
+  }
+}
+
+# Print a message to indicate completion
+cat("Heatmaps saved for all clusters and treatment groups.\n")
+
+
+
+
+
+
+###########################
+###########################
+###########################
+###########################
+###########################
+###########################
+
 ## Sorting by 2 groups (incorporating the mean to determine significance)
 
 
 # Read the CSV file
-mat <- read.csv("./C2_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
+mat <- read.csv("/Volumes/DataBox/MCS2023/Tx_Comp/C3_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
 
 # Check the structure of your data
 str(mat)
@@ -177,14 +270,15 @@ treatment_labels <- c("2N", "2N+", "Ts", "Ts+")  # New labels for treatments
 annotation_df <- data.frame(Treatment = factor(c("2N", "2N+", "Ts", "Ts+"), levels = treatment_labels))
 rownames(annotation_df) <- colnames(sorted_mat)
 
-# Create a color palette for the heatmap
-color_palette <- colorRampPalette(c("navy", "white", "red"))(50)
+# Adjust color palette and breaks for better contrast and full range
+color_palette <- colorRampPalette(c("#1F9E89FF", "white", "#440154FF"))(100)
+color_breaks <- seq(min(combined_matrix, na.rm = TRUE), max(combined_matrix, na.rm = TRUE), length.out = 101)
 
-# Create a color mapping for treatment groups (optional, adjust colors as needed)
-annotation_colors <- list(Treatment = c("2N" = "lightblue", "2N+" = "lightgreen", "Ts" = "orange", "Ts+" = "pink"))
+# Create a color mapping for treatment groups 
+annotation_colors <- list(Treatment = c("2N" = "#440154", "2N+" = "#31688EFF", "Ts" = "#35B779FF", "Ts+" = "#FDE725FF"))
 
 # Create a PDF for the heatmap plot
-pdf(file = "C2_byTx_sorted_heatmap_by_t1_t2_2024-10-16.pdf", width = 7, height = 32)
+pdf(file = "C3_byTx_sorted_heatmap_by_t1_t2_2024-12-19.pdf", width = 7, height = 32)
 
 # Create the pheatmap with updated treatment labels without clustering
 pheatmap_result <- pheatmap(
@@ -193,7 +287,7 @@ pheatmap_result <- pheatmap(
   cluster_cols = FALSE,  # Disable column clustering
   cluster_rows = FALSE,  # Disable row clustering to show sorted order
   show_colnames = TRUE,  # Show column names
-  main = "Cluster 2 Heatmap of Gene Accessibility (Sorted by t1 and t2)",
+  main = "Cluster 3 Heatmap of Gene Accessibility (Sorted by 2N and 2N+)",
   color = color_palette,
   fontsize = 10, cellwidth = 10, cellheight = 10,
   annotation_col = annotation_df,  # Add treatment group labels
@@ -207,6 +301,111 @@ dev.off()
 
 
 
+##################################
+##################################
+##################################
+
+
+## Sorting by 2 groups, loop through all clusters 
+## Make comps 2N & 2N+ or 2N+ & Ts+
+
+
+# Set working directory
+setwd("/Volumes/DataBox/Heatmap_Comps")
+
+# Define clusters and treatment groups
+clusters <- paste0("C", 1:25)
+treatment_pairs <- list(
+  c("t1", "t2"),  # 2N and 2N+
+  c("t2", "t4")   # 2N+ and Ts+
+)
+treatment_labels <- c("2N", "2N+", "Ts", "Ts+")
+
+# Define the file path template
+file_path_template <- "/Volumes/DataBox/MCS2023/Tx_Comp/%s_byTx_zscores_2024-03-21.csv"
+
+# Loop through all clusters
+for (cluster in clusters) {
+  # Construct the file path for the current cluster
+  file_path <- sprintf(file_path_template, cluster)
+  
+  # Check if the file exists
+  if (!file.exists(file_path)) {
+    cat(paste("File not found for", cluster, "- skipping.\n"))
+    next  # Skip to the next cluster if the file doesn't exist
+  }
+  
+  # Read the CSV file for the current cluster
+  mat <- read.csv(file_path, header = TRUE, row.names = 1, check.names = FALSE)
+  
+  # Loop through each treatment pair
+  for (pair in treatment_pairs) {
+    pair_labels <- treatment_labels[match(pair, c("t1", "t2", "t3", "t4"))]
+    pair_name <- paste(pair_labels, collapse = "_")
+    
+    # Check if both treatments exist in the data
+    if (!all(pair %in% colnames(mat))) {
+      cat(paste("Treatment pair", pair_name, "not found for", cluster, "- skipping.\n"))
+      next
+    }
+    
+    # Calculate the mean of the treatment pair for sorting
+    mean_values <- rowMeans(mat[, pair], na.rm = TRUE)
+    
+    # Sort the data based on the mean of the treatment pair
+    sorted_mat <- mat[order(mean_values, decreasing = TRUE), ]
+    
+    # Create a data frame for column annotations
+    annotation_df <- data.frame(
+      Treatment = factor(treatment_labels[match(colnames(sorted_mat), c("t1", "t2", "t3", "t4"))], 
+                         levels = treatment_labels)
+    )
+    rownames(annotation_df) <- colnames(sorted_mat)
+    
+    # Define color settings
+    color_palette <- colorRampPalette(c("#1F9E89FF", "white", "#440154FF"))(100)
+    color_breaks <- seq(min(sorted_mat, na.rm = TRUE), max(sorted_mat, na.rm = TRUE), length.out = 101)
+    annotation_colors <- list(Treatment = c("2N" = "#440154", "2N+" = "#31688EFF", "Ts" = "#35B779FF", "Ts+" = "#FDE725FF"))
+    
+    # Save the heatmap as a PDF file
+    output_file <- paste0(cluster, "_grouped_heatmap_", pair_name, "_2024-12-19.pdf")
+    pdf(file = output_file, width = 7, height = 32)
+    
+    # Generate the heatmap
+    pheatmap(
+      sorted_mat,
+      scale = "none",  # No scaling to maintain the original values
+      cluster_cols = FALSE,  # Disable column clustering
+      cluster_rows = FALSE,  # Disable row clustering to show sorted order
+      show_colnames = TRUE,  # Show column names
+      main = paste("Cluster", gsub("C", "", cluster), "Heatmap (Grouped by", pair_name, ")"),
+      color = color_palette,
+      fontsize = 10, cellwidth = 10, cellheight = 10,
+      annotation_col = annotation_df,  # Add treatment group labels
+      annotation_colors = annotation_colors,  # Use colors for the annotations
+      display_numbers = FALSE  # Disable displaying numbers in the heatmap
+    )
+    
+    # Close the PDF device to finish plotting
+    dev.off()
+  }
+}
+
+# Print a message to indicate completion
+cat("Grouped heatmaps saved for all clusters and treatment pairs.\n")
+
+
+
+
+
+
+
+
+##################################
+##################################
+##################################
+##################################
+##################################
 ##################################
 ##################################
 ##################################
@@ -370,7 +569,7 @@ dev.off()
 
 
 # Read the CSV file
-mat <- read.csv("./C3_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
+mat <- read.csv("/Volumes/DataBox/MCS2023/Tx_Comp/C3_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
 
 # Check the structure of your data
 str(mat)
@@ -391,14 +590,15 @@ treatment_labels <- c("2N", "2N+", "Ts", "Ts+")  # New labels for treatments
 annotation_df <- data.frame(Treatment = factor(c("2N", "2N+", "Ts", "Ts+"), levels = treatment_labels))
 rownames(annotation_df) <- colnames(top_genes_mat)
 
-# Create a continuous color gradient (smooth)
-color_palette <- colorRampPalette(c("darkgreen", "white", "purple"))(100)  # Increase number of colors for smooth gradient
+# Adjust color palette and breaks for better contrast and full range
+color_palette <- colorRampPalette(c("#1F9E89FF", "white", "#440154FF"))(100)
+color_breaks <- seq(min(combined_matrix, na.rm = TRUE), max(combined_matrix, na.rm = TRUE), length.out = 101)
 
-# Create a color mapping for treatment groups
-annotation_colors <- list(Treatment = c("2N" = "lightblue", "2N+" = "yellow", "Ts" = "lightgreen", "Ts+" = "orange"))
+# Create a color mapping for treatment groups 
+annotation_colors <- list(Treatment = c("2N" = "#440154", "2N+" = "#31688EFF", "Ts" = "#35B779FF", "Ts+" = "#FDE725FF"))
 
 # Create a PDF for the heatmap plot
-pdf(file = "C3_byTx_sorted_heatmap_by_t3_top_50_percent_2024-11-06_with_dendrograms.pdf", width = 9, height = 32)
+pdf(file = "C3_byTx_sorted_heatmap_by_t3_top_50_percent_2024-12-19_with_dendrograms.pdf", width = 9, height = 32)
 
 # Create the pheatmap with clustering enabled
 pheatmap_result <- pheatmap(
@@ -500,8 +700,8 @@ library(pheatmap)
 treatment_labels <- c("2N", "2N+", "Ts", "Ts+")
 
 # Read the datasets
-mat1 <- read.csv("./C3_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
-mat2 <- read.csv("./C6_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
+mat1 <- read.csv("/Volumes/DataBox/MCS2023/Tx_Comp/C3_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
+mat2 <- read.csv("/Volumes/DataBox/MCS2023/Tx_Comp/C6_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
 
 # Select the top 50% most variable genes based on variance for each dataset
 select_top_50_percent <- function(mat) {
@@ -533,14 +733,14 @@ combined_annotation <- data.frame(Treatment = factor(combined_treatments, levels
 rownames(combined_annotation) <- colnames(combined_matrix)
 
 # Adjust color palette and breaks for better contrast and full range
-color_palette <- colorRampPalette(c("darkgreen", "white", "purple"))(100)
+color_palette <- colorRampPalette(c("#1F9E89FF", "white", "#440154FF"))(100)
 color_breaks <- seq(min(combined_matrix, na.rm = TRUE), max(combined_matrix, na.rm = TRUE), length.out = 101)
 
-# Create a color mapping for treatment groups (optional, adjust colors as needed)
-annotation_colors <- list(Treatment = c("2N" = "lightblue", "2N+" = "yellow", "Ts" = "lightgreen", "Ts+" = "orange"))
+# Create a color mapping for treatment groups 
+annotation_colors <- list(Treatment = c("2N" = "#440154", "2N+" = "#31688EFF", "Ts" = "#35B779FF", "Ts+" = "#FDE725FF"))
 
 # Plot the heatmap with adjusted settings
-jpeg("hierarchical_heatmap_C3-C6_top50byVariance_2024-11-10.jpg", width = 800, height = 800, quality = 100)
+jpeg("hierarchical_heatmap_C3-C6_top50byVariance_2024-12-19.jpg", width = 800, height = 800, quality = 100)
 pheatmap(
   combined_matrix,
   annotation_col = combined_annotation,
@@ -550,7 +750,7 @@ pheatmap(
   breaks = color_breaks,    # Set color breaks to cover full range of data
   show_rownames = FALSE,    # Hide gene names
   show_colnames = FALSE,    # Hide column names for a cleaner plot
-  main = "",                # Remove title
+  main = "Top 50% Most Variable Genes - Hierarchical Clustering",  # Title
   legend = FALSE,           # Remove legend for a cleaner plot
   annotation_colors = annotation_colors,
   gaps_col = ncol(top_genes1)  # Add space between the two matrices
@@ -574,8 +774,8 @@ library(pheatmap)
 treatment_labels <- c("2N", "2N+", "Ts", "Ts+")
 
 # Read the datasets
-mat1 <- read.csv("./C3_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
-mat2 <- read.csv("./C6_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
+mat1 <- read.csv("/Volumes/DataBox/MCS2023/Tx_Comp/C3_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
+mat2 <- read.csv("/Volumes/DataBox/MCS2023/Tx_Comp/C6_byTx_zscores_2024-03-21.csv", header = TRUE, row.names = 1, check.names = FALSE)
 
 # Step 1: Select top 50 genes based on their expression in T3 (from 't3' column)
 select_top_50_t3 <- function(mat, treatment_col) {
@@ -605,14 +805,14 @@ combined_annotation <- data.frame(Treatment = factor(combined_treatments, levels
 rownames(combined_annotation) <- colnames(combined_matrix)
 
 # Step 6: Adjust color palette and breaks for better contrast and full range
-color_palette <- colorRampPalette(c("darkgreen", "white", "purple"))(100)
+color_palette <- colorRampPalette(c("#1F9E89FF", "white", "#440154FF"))(100)
 color_breaks <- seq(min(combined_matrix, na.rm = TRUE), max(combined_matrix, na.rm = TRUE), length.out = 101)
 
 # Create a color mapping for treatment groups (optional, adjust colors as needed)
-annotation_colors <- list(Treatment = c("2N" = "lightblue", "2N+" = "yellow", "Ts" = "lightgreen", "Ts+" = "orange"))
+annotation_colors <- list(Treatment = c("2N" = "#440154", "2N+" = "#31688EFF", "Ts" = "#35B779FF", "Ts+" = "#FDE725FF"))
 
 # Step 7: Plot the heatmap with adjusted settings
-jpeg("hierarchical_heatmap_C3-C6_top50T3_2024-11-10.jpg", width = 800, height = 800, quality = 100)
+jpeg("hierarchical_heatmap_C3-C6_top50T3_2024-12-19.jpg", width = 800, height = 800, quality = 100)
 pheatmap(
   combined_matrix,
   annotation_col = combined_annotation,
