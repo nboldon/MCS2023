@@ -1,3 +1,5 @@
+## Beartooth conda computing environment
+
 name: archr2023_12
 channels:
   - conda-forge
