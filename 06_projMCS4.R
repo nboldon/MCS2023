@@ -1,4 +1,9 @@
-Add pseudobulk replicates & reproduceable peak set using MACS2
+# 06. Project MCS4 
+
+## 06_projMCS4.R
+
+- Add pseudobulk replicates & reproduceable peak set using MACS2
+
 
 
 #Setup an interactive session
