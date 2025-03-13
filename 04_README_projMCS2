@@ -1,7 +1,14 @@
-## 04. Project MCS2
+# 04. Project MCS2
+
+- Zenodo DOI: 10.5281/zenodo.14984470
 
 
-# projMCS2.R
+## 04_README_projMCS2
+
+- Filters doublets, runs initial DA gene accessibility groupBy cluster (no subset), and creates initial visualizations for all single cells in the project, including UMAPs, t-SNE, heatmaps, browser tracks. 
+
+
+## 04_projMCS2.R
 - Filters doublets
 - Adds Iterative LSI
 - Adds Harmony
@@ -9,31 +16,33 @@
 - Creates cluster confusion matrix
 
 
-# projMCS2_scEmbeddings.R
+## 04_projMCS2_scEmbeddings.R
 - UMAP using LSI by sample & cluster
 - TSNE using LSI by sample & cluster
 - UMAP using Harmony by sample & cluster
 - TSNE using Harmony by sample & cluster
 
-# Files created from projMCS2_scEmbedding.R
+## Files created from projMCS2_scEmbedding.R
 04_UMAP-Sample-Clusters.pdf
 04_TSNE-Sample-Clusters.pdf
 04_UMAP2Harmony-Sample-Clusters.pdf
 04_TSNE2Harmony-Sample-Clusters.pdf
 
 
-# projMCS2_MarkerGenes.R
-# Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
+## 04_projMCS2_MarkerGenes.R
+- Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
 - getMarkerFeatures
 - Marker list by cluster (FDR & Log2FC)
 - Heatmaps for marker features; cowplots for all genes
 # NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
+04_Cluster_GeneMarkers_2025-03-06.R
+- Uses 04_projMCS2_MarkerGenes.R code, but calculates abs(Log2FC)
 
-# projMCS5_MarkerGenes.R 
-# Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
+## 04_projMCS5_MarkerGenes.R 
+- Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
 - Files saved for each cluster; ex: C1_MarkerGenes_2025-03-06.csv
 
-# Summary files created from analysis results of projMCS2_MarkerGenes.R
+## Summary files created from analysis results of projMCS2_MarkerGenes.R
 - 04_Cluster_Analysis_2024-02-12.xlsm
     - Each tab summarizes cell count information by cluster, including:
       - cell counts by sample and cluster (incl. median TSS & nFrags per cell)
@@ -53,14 +62,18 @@
 - 04_MCS2023_1-31-2024.pptx
     - Summarizes key points of interest from the above analysis
 
-# Heatmaps of projMCS2 by cluster from projMCS2_MarkerGenes.R
+## Heatmaps of projMCS2 by cluster from projMCS2_MarkerGenes.R
 - 04_UMAP-MarkerGenes-WO-Imputation.pdf
 - 04_GeneScores-Marker-Heatmap.pdf
     - cutOff = "FDR <= 0.01 & Log2FC >= 1.25"
 - 04_GeneMarkers_Top50_Heatmap_1-25-2024.pdf
 
+## 04_HighlightCells_2024-11-22.R
+- Highlights treatment group cells of interest on UMAPs.
+    - plotEmbedding uses colorBy = cellColData, name = treatment
+    - Plots specific colors by treatment group. 
 
-# projMCS2_ArchRBrowser.R
+## 04_projMCS2_ArchRBrowser.R
 - Track plotting with ArchRBrowser
 - 04_Plot-Tracks-MarkerGenes_2024-04-04.pdf 
     - Creates browser tracks for the following genes:
