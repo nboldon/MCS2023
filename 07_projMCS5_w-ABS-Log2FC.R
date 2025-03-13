@@ -1,7 +1,17 @@
+## 07_projMCS5-w-ABS-Log2FC.R
+- Identifies marker peaks by cluster
+  - cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
+  - 07_Peak_markerList_2025-03-06.csv
+- Plots marker peaks
+  - cutOff = "FDR<=0.01 & abs(Log2FC)>=1.25"
+  - '07_Peak-Marker-Heatmap_2025-03-06.pdf'
 
 
 ## NOTE: The 07_projMCS5.R code did not use abs(Log2FC)
 ## This code accommodates for that and reruns getMarkerFeatures before applying cutoffs
+
+
+
 
 #Load libraries
 R
