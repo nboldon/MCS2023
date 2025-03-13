@@ -1,7 +1,7 @@
+# 05. Project MCS3
 
-############################################
-############################################
+## 05_projMCS3.R
 
-##Defining cluster identity with scRNA-seq
+- Defining cluster ID with scRNA-seq 
 
-#Missing RNA-seq data, could not complete projMCS3
+- Unable to complete; no RNA-seq data for cohort; study limitation
