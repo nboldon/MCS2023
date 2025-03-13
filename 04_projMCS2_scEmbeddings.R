@@ -1,3 +1,22 @@
+## 04_projMCS2_scEmbeddings.R
+
+- UMAP using LSI by sample & cluster
+- TSNE using LSI by sample & cluster
+- UMAP using Harmony by sample & cluster
+- TSNE using Harmony by sample & cluster
+
+
+## Files created from projMCS2_scEmbedding.R
+# Zenodo DOI: 10.5281/zenodo.14984470
+
+04_UMAP-Sample-Clusters.pdf
+04_TSNE-Sample-Clusters.pdf
+04_UMAP2Harmony-Sample-Clusters.pdf
+04_TSNE2Harmony-Sample-Clusters.pdf
+
+
+
+
 #Setup an interactive session
 salloc --account=eon -t 1-00:00 --mem=64G --nodes=1 --ntasks-per-node=16
 
