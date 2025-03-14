@@ -1,7 +1,19 @@
 # 09. Marker genes subset by Treatment, grouped by cluster
 
+- Zenodo DOI: 10.5281/zenodo.14991262
+    - 100 files
+- Zenodo DOI: 10.5281/zenodo.14991304
+    - 97 files
+- Zenodo DOI: 10.5281/zenodo.15022565
+    - 100 files
+- Zenodo DOI: 10.5281/zenodo.15022574
+    - 6 files
+    
+- Investigates DA marker genes by first subsetting all cells by treatment, then grouping by cluster. 
+
 
 ## 09_projMCS5_geneMarkers_byClusterTxGrp_2024-04-10.R
+
 - Subsets by treatment, group by cluster
 - cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25"
 ## 09_projMCS5_geneMarkers_byClusterTxGrp_2024-04-26.R
@@ -12,6 +24,87 @@
 - Subsets by cluster, group by treatment
 - File names ex: C1_GeneMarker_List_2024-04-08.csv & GeneMarker_List_Master_2024-04-08.csv
 
+
 ## 09_Combine_Spreadsheets.R
+
 - Combines marker genes subset by treatment group groupBy cluster into one summary spreadsheet. 
 - File names ex: C1_TxMarkers_Combined.csv
+
+
+## 09_Combined_GeneMarkers_TxComps-byCluster-OR-CellType_Heatmap_2024-11-07.R
+
+- File load ex: C1_Combined_GeneMarkers_Comps_2024-11-07.csv
+- Plots a heatmap.
+    - File name ex: C1_Combined_GeneMarkers_Comps_Heatmap_2024-11-07.pdf
+- Loops through all clusters to plot heatmaps.
+    - Fie name ex: C%d_Combined_GeneMarkers_Comps_Heatmap_2024-11-07.pdf
+- Loops through all clusters, removes NA values, and plots heatmaps.
+    - File name ex: C%d_Combined_GeneMarkers_Comps_Heatmap_NA-removed_2024-11-07.pdf
+- Loops through cell types, removes NA values, and plots heatmaps.
+    - File name ex: %s_Combined_GeneMarkers_Comps_Heatmap_NA-removed_2024-12-02.pdf
+    *NOTE: Files saved under 11. Marker genes by cell type
+- Plots heatmaps sorted by treatment group
+    - Adapted from projMCS5_GeneMarkers_TxComp-byCluster_Heatmap.R
+    
+    
+## 09_Combined_GeneMarkers_TxComps-byCluster_Heatmap_2024-12-19.R
+
+- Runs the same code as 09_Combined_GeneMarkers_TxComps-byCluster-OR-CellType_Heatmap_2024-11-07.R but is updated for Viridis color palette ("#440154FF", "white", "#1F9E89FF"). 
+- Code specifies clusters that did not have data to plot. 
+    - File ex: C%d_Combined_GeneMarkers_Comps_Heatmap_2024-12-19.pdf & C%d_Combined_GeneMarkers_Comps_Heatmap_NA-removed_2024-12-19.pdf
+- Includes heatmaps with labeled known markers. 
+    - File ex: C18_All127_TxComp_Heatmap_2024-03-13.pdf
+- Prints z-scores from the heatmap.
+    - File ex: C18_All127_byTx_zscores_2024-03-13.csv
+    
+    
+## 09_projMCS5_SingleTxGrp_Analysis.R
+
+- Subsets by treatment group for downstream analysis. 
+    - File name ex: T1_GeneMarker_Heatmap.pdf
+    
+    
+## 09_GeneCounts_byTx-Comp_Barplot_2024-11-08.R
+
+- Creates a barplot comparing the DA genes obtained by treatment group pairwise comparisons of subset clusters, and DA genes obtained by subsetting treatment groups and groupBy Cluster. 
+    - File load ex: C3_TxComp_GeneUnions_2024-07-24.xlsx
+    - Runs using a rainbow color palette, and Viridis color palette. 
+    - File: gene_counts_by_comparison.jpg
+- Loop runs through all clusters, code specifies when data was not found for a cluster.
+    - File ex: C%d_gene_counts_by_comps_2024-11-08.jpg
+    
+    
+## 09_Sorted_Heatmaps_2024-11-10.R
+
+- Load file ex: C1_byTx_zscores_2024-03-21.csv
+- Sorts data based on mean of the rows, updates labels, plots heatmap.
+    - File ex: C1_byTx_sorted_heatmap_2024-10-16.pdf
+- Ordered by treatment group. 
+    - File ex: C1_byTx_sorted_heatmap_by_t1_no_dendrogram_2024-10-16.pdf
+- Sorts data by 2 groups using means of groups of interest, plots heatmap.
+    - File ex: C2_byTx_sorted_heatmap_by_t1_t2_2024-10-16.pdf
+- Removes boxes and sorts based on Ts top 50%, and plots heatmap.
+    - File ex: C3_byTx_sorted_heatmap_by_t3_top_50_percent_2024-11-05.pdf
+- Hierarchical clustering with dendrogram using 1 group and top 50% of genes.
+    - File ex: C3_byTx_sorted_heatmap_by_t3_top_50_percent_2024-11-06_with_dendrograms.pdf
+- Hierarchical clustering with no dendrogram using multiple groups and top 50% of variance.
+    - File ex: hierarchical_heatmap_C3-C6_top50byVariance_2024-11-10.jpg
+- Hierarchical clustering with no dendrogram using multiple groups and top 50 of Ts genes.
+    - File ex: hierarchical_heatmap_C3-C6_top50T3_2024-11-10.jpg
+- Hierarchical clustering with no dendrogram using multiple groups and all genes.
+    *NOTE: Due to differing numbers of genes in each comparison, this code limits the genes displayed to include only the genes that are common in both datasets.
+    - File ex: combined_heatmap_common_genes_no_dendrogram.jpg
+- Code to display multiple heatmaps on the same page. 
+    - File: Comparison_Heatmaps_2024-11-06.pdf
+- Code lays the heatmaps side by side with no spaces, gene names, titles, or legends using the top 50 genes from each comparison.
+    - File: combined_heatmap_no_genes.jpg
+- Hierarchical clustering with no dendrogram using multiple groups and top 90 of 2N genes.
+    - File ex: hierarchical_heatmap_C3-C6_top90-T1_2024-12-19.jpg
+- Hierarchical clustering with no dendrogram using multiple groups and top 90% of 2N genes.
+    - Cannot run based on differing number of rows between clusters. 
+    
+## 09_Sorted_Heatmaps_2024-12-19.R
+
+- Runs the same code as 09_Sorted_Heatmaps_2024-11-10.R but uses Viridis color palette. 
+- Files saved using the same syntax, but with updated date (2024-12-19). 
+
