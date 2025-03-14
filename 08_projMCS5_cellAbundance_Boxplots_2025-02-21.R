@@ -1,3 +1,13 @@
+## 08_CellAbundance_Boxplots_wStats_2025-02-21.R
+- Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
+- Improved color palette and stats than those run on 2024-04-11 & 2024-12-09
+- Uses ANOVA, then for those that are sig, uses t-tests, followed by Bonforonni correction
+
+
+
+
+
+
 ## 08_CellAbundance_Boxplots_wStats_2025-02-21
 - Cell abundance analysis uses 07_Cell-Abund_Boxplot_2024-04-11.csv
 - Improved color palette and stats than those run on 2024-04-11 & 2024-12-09
