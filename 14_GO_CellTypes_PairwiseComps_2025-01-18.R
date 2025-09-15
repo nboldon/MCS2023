@@ -657,3 +657,74 @@ for (cell_type in colnames(data)) {
 # No GO terms found for gaba_DA_T3_vs_T2
 # No GO terms found for glut_DA_T3_vs_T4
 # No GO terms found for astro_DA_T3_vs_T4
+
+
+
+
+##################################################################
+##################################################################
+##################################################################
+
+
+## To combine spreadsheets from loop:
+
+
+# Load necessary library
+library(dplyr)
+
+# Set the directory where the result files are stored
+output_dir <- "/Volumes/DataBox/GO_Analysis/CellTypes"
+
+# List all the .csv files in the output directory
+csv_files <- list.files(output_dir, pattern = "\\_GO_results.csv$", full.names = TRUE)
+
+# Create an empty list to store the data frames
+all_data <- list()
+
+# Loop through each .csv file and read it into a data frame
+for (file in csv_files) {
+  # Read the data from the CSV file
+  data <- read.csv(file)
+  
+  # Ensure 'geneID' is always treated as a character (to handle data type inconsistencies)
+  data$geneID <- as.character(data$geneID)
+  
+  # Assign the full file name to the new file_name column
+  data$file_name <- basename(file)
+  
+  # Append the data frame to the list
+  all_data <- append(all_data, list(data))
+  
+  # Debug: Check the number of rows being added
+  message(paste("Rows in file", basename(file), ":", nrow(data)))
+}
+
+# Combine all the data frames into one
+combined_data <- bind_rows(all_data)
+
+# Debug: Check the number of rows after combining
+message(paste("Total rows after combining:", nrow(combined_data)))
+
+# Optionally, save the combined data to a new CSV file
+output_file <- "/Volumes/DataBox/GO_Combined_Results.csv"
+write.csv(combined_data, output_file, row.names = FALSE)
+
+# Check if the file is saved successfully
+if(file.exists(output_file)) {
+  message("The combined file has been saved to: ", output_file)
+} else {
+  message("Failed to save the combined file.")
+}
+
+# Check the first few rows of the combined data
+head(combined_data)
+
+
+
+
+
+
+
+##################################################################
+##################################################################
+##################################################################
