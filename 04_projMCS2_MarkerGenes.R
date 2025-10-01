@@ -1,6 +1,6 @@
 ## 04_projMCS2_MarkerGenes.R
 
-- Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
+- Group by: Cluster (no subset), FDR <= 0.01, abs(Log2FC) >= 1.25
 - getMarkerFeatures
 - Marker list by cluster (FDR & Log2FC)
 - Heatmaps for marker features; cowplots for all genes
@@ -47,7 +47,7 @@ markerGS <- get MarkerFeatures(
 	testMethod = "wilcoxon"
 )
 
-markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & Log2FC >= 1.25")
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
 
 #Marker list by cluster
 markerList$C6
@@ -66,7 +66,7 @@ markerList.Cluster.markers <- data.frame(getMarkers(Cluster.markers, cutOff = "F
 cluster.markers.test <- markerList.Cluster.markers
 
 #To get a list of dataframe objects, one for each cluster, containing the relevant marker features
-markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & Log2FC >= 1.25")
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
 
 #Marker list by cluster
 markerList$C6
