@@ -10,20 +10,6 @@
 
 
 
-
-
-## 04_projMCS2_MarkerGenes.R
-
-- Group by: Cluster (no subset), FDR <= 0.01, Log2FC >= 1.25
-- getMarkerFeatures
-- Marker list by cluster (FDR & Log2FC)
-- Heatmaps for marker features; cowplots for all genes
-    *NOTE: projMCS2_MarkerGenes.R did not calculate abs(Log2FC)
-## 04_Cluster_GeneMarkers_2025-03-06.R
-- Uses 04_projMCS2_MarkerGenes.R code, but calculates abs(Log2FC)
-
-
-
 #Setup an interactive session
 salloc --account=eon -t 1-00:00 --mem=64G --nodes=1 --ntasks-per-node=16
 
