@@ -27,27 +27,29 @@ library(enrichplot)
 library(pheatmap)
 
 #Additional setup
-setwd("/project/eon/nboldon/MCS2023/Analysis")
+#setwd("/project/eon/nboldon/MCS2023/Analysis")
+setwd("/Volumes/DataBox")
 addArchRGenome("mm10")
 addArchRThreads (threads = 16)
 
 #Load project
-projMCS2 <- loadArchRProject(path = "/project/eon/nboldon/MCS2023/Save-ProjMCS2", force = FALSE, showLogo = FALSE)
+#projMCS2 <- loadArchRProject(path = "/project/eon/nboldon/MCS2023/Save-ProjMCS2", force = FALSE, showLogo = FALSE)
+projMCS5 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS5", force = FALSE, showLogo = FALSE)
 
 ######################################
 ######################################
 
 ##Gene scores and marker genes
 
-markerGS <- get MarkerFeatures(
-	ArchRProj = projMCS2,
+markerGS <- getMarkerFeatures(
+	ArchRProj = projMCS5,
 	useMatrix = "GeneScoreMatrix",
 	groupBy = "Clusters",
 	bias = c("TSSEnrichment", "log10(nFrags)"),
 	testMethod = "wilcoxon"
 )
 
-markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+markerList <- getMarkers(markerGS, cutOff = "FDR <= 0.01 & Log2FC >= 1.25")
 
 #Marker list by cluster
 markerList$C6
@@ -66,7 +68,7 @@ markerList.Cluster.markers <- data.frame(getMarkers(Cluster.markers, cutOff = "F
 cluster.markers.test <- markerList.Cluster.markers
 
 #To get a list of dataframe objects, one for each cluster, containing the relevant marker features
-markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & Log2FC >= 1.25")
 
 #Marker list by cluster
 markerList$C6
@@ -78,25 +80,39 @@ for(i in names(markerList)) {
 #########################################
 #########################################
 
-##Heatmaps for marker features
+## Heatmaps for marker features
 
-#To visualize all of the marker features simultaneously
-markerGenes <- c(
+# To visualize all of the marker features simultaneously
+#markerGenes <- c(
 	"Olig2", "Neurod6", "Gad2", "Dio2", "C1qa", "Cd31"
 )
 
+# Top 3 cell type-specific marker genes:
+#topMarkerGenes <- c(#Glutamatergic "Neurod1", "Neurod6", "Satb2", "Slc17a6", "Slc17a8", 
+  #GABAergic "Gad1", "Pvalb", "Vip", "Sst", "Reln",
+  #Microglia "C1qa, Cc14", "Cd14", "Cx3cr1", "Trem2",
+  #Oligodendrocytes "Mag", "Mbp", "Olig1", "Olig2", "Opalin",
+  #Astrocytes "Aqp4", "Cbs", "Dio2", "Gfap", "Ppp1r3c",
+  #Endo-vasc "Anpep", "Cldn5", "Flt1", "Fn1", "Slco1a4")
+topMarkerGenes <- c("Neurod1", "Neurod6", "Satb2", "Slc17a6", "Slc17a8", 
+                    "Gad1", "Pvalb", "Vip", "Sst", "Reln",
+                    "C1qa, Cc14", "Cd14", "Cx3cr1", "Trem2",
+                    "Mag", "Mbp", "Olig1", "Olig2", "Opalin",
+                    "Aqp4", "Cbs", "Dio2", "Gfap", "Ppp1r3c",
+                    "Anpep", "Cldn5", "Flt1", "Fn1", "Slco1a4")
+
 heatmapGS <- plotMarkerHeatmap(
-	seMarker = markersGS
+	seMarker = markerGS,
 	cutOff = "FDR <= 0.01 & Log2FC >= 1.25",
-	labelMarkers = markerGenes,
+	labelMarkers = topMarkerGenes,
 	transpose = TRUE
 )
 
-#To plot the heatmap
+# To plot the heatmap
 ComplexHeatmap::draw(heatmapGS, heatmap_legend_side = "bot", annotation_legend_side = "bot")
 
-#To save the heatmap
-plotPDF(heatmapGS, name = "GeneScores-Marker-Heatmap", width = 8, height = 6, ArchRProj = projMCS2, addDOC = FALSE)
+# To save the heatmap
+plotPDF(heatmapGS, name = "Top_Cell-Type-Marker-Heatmap_2025-05-29", width = 8, height = 6, ArchRProj = projMCS5, addDOC = FALSE)
 
 #############################################
 #############################################
