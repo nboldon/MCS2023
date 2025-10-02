@@ -5,4 +5,12 @@ Subsets treatment groups by cluster
 Applies GO and KEGG analysis to results
 
 # 17_Motif_GO-KEGG_Cluster-CellType_ResultsComp
-# Comprehensive Comparison of Cluster-based vs Cell Type-based Motif Enrichment Results
+Comprehensive Comparison of Cluster-based vs Cell Type-based Motif Enrichment Results
+
+# 17_Motif_Cluster_GO-KEGG_PairwiseComps
+Treatment group motif pairwise comparisons by cluster
+Analysis includes GO and KEGG with a focus on neurodevelopment functions
+
+# 17_Motif_CellType_GO-KEGG_PairwiseComps
+Treatment group motif pairwise comparisons by cell type
+Analysis includes GO and KEGG with a focus on neurodevelopment functions
