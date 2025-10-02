@@ -1,0 +1,809 @@
+ Comprehensive Comparison of Cluster-based vs Cell Type-based Motif Enrichment Results
+# Updated to work with the actual motif data structure from your GO/KEGG analysis
+
+# Load required libraries
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(VennDiagram)
+library(pheatmap)
+library(viridis)
+library(readr)
+library(patchwork)
+library(UpSetR)
+
+# Set working directory
+setwd("/Volumes/DataBox/ProjMCS7")
+
+# Key neurodevelopmental and transcription factor motifs for focused comparison
+key_motif_families <- c(
+  # Core neurodevelopmental TFs
+  "sox", "pax", "dlx", "emx", "otx", "gbx", "hoxa", "hoxb", "hoxc", "hoxd",
+  "foxg", "foxp", "tbr", "satb", "neurod", "neurog", "ascl", "olig",
+  
+  # Chromatin remodeling and epigenetic factors
+  "tcf", "tcfap", "ctcf", "rest", "yy1", "sp1", "sp3", "klf", "zic",
+  "mef2", "creb", "nfat", "nfkb", "ap1", "jun", "fos",
+  
+  # Brain development specific
+  "nkx", "gsx", "irx", "lhx", "msx", "pbx", "six", "tlx", "vax",
+  "en1", "en2", "fez", "hhex", "pitx", "uncx",
+  
+  # Down syndrome and intellectual disability related
+  "runx", "ets", "elk", "gata", "hand", "twist", "myc", "max",
+  "usf", "nrf", "arnt", "ahr", "hif", "stat", "smad",
+  
+  # Synaptic and neuronal function
+  "cux", "cut", "pou", "brn", "oct", "pit", "lmo", "tal", "scl"
+)
+
+# Function to check if a TF contains any key neurodevelopmental motifs
+contains_neuro_motifs <- function(tf_name, key_families = key_motif_families) {
+  tf_lower <- tolower(tf_name)
+  any(sapply(key_families, function(family) grepl(family, tf_lower, fixed = TRUE)))
+}
+
+# Function to read TF summary files from GO/KEGG analysis
+read_tf_summary_data <- function(analysis_type) {
+  # Define file patterns based on analysis type
+  if (analysis_type == "celltype") {
+    tf_file <- "Summary_All_TFs_CellTypes.csv"
+    tf_freq_file <- "Summary_TF_Frequency_CellTypes.csv"
+    tf_by_group_file <- "Summary_TF_by_CellType.csv"
+  } else if (analysis_type == "cluster") {
+    tf_file <- "Summary_All_TFs_Clusters.csv"
+    tf_freq_file <- "Summary_TF_Frequency_Clusters.csv"
+    tf_by_group_file <- "Summary_TF_by_Cluster.csv"
+  } else {
+    stop("Analysis type must be 'celltype' or 'cluster'")
+  }
+  
+  # Check if files exist
+  if (!file.exists(tf_file)) {
+    message("File not found: ", tf_file)
+    return(NULL)
+  }
+  
+  tryCatch({
+    # Read main TF data
+    tf_data <- read_csv(tf_file, show_col_types = FALSE)
+    
+    # Add neurodevelopmental classification
+    tf_data$is_neuro_related <- sapply(tf_data$TF, contains_neuro_motifs)
+    tf_data$analysis_type <- analysis_type
+    
+    # Read frequency data if available
+    tf_freq_data <- NULL
+    if (file.exists(tf_freq_file)) {
+      tf_freq_data <- read_csv(tf_freq_file, show_col_types = FALSE)
+      tf_freq_data$is_neuro_related <- sapply(tf_freq_data$TF, contains_neuro_motifs)
+    }
+    
+    # Read by-group data if available
+    tf_by_group_data <- NULL
+    if (file.exists(tf_by_group_file)) {
+      tf_by_group_data <- read_csv(tf_by_group_file, show_col_types = FALSE)
+      tf_by_group_data$is_neuro_related <- sapply(tf_by_group_data$TF, contains_neuro_motifs)
+    }
+    
+    cat("Successfully read", analysis_type, "data:\n")
+    cat("  Total TF entries:", nrow(tf_data), "\n")
+    cat("  Unique TFs:", length(unique(tf_data$TF)), "\n")
+    cat("  Neuro-relevant TFs:", sum(tf_data$is_neuro_related), "\n")
+    
+    return(list(
+      tf_data = tf_data,
+      tf_freq_data = tf_freq_data,
+      tf_by_group_data = tf_by_group_data
+    ))
+    
+  }, error = function(e) {
+    message("Error reading ", analysis_type, " data: ", e$message)
+    return(NULL)
+  })
+}
+
+# Function to identify consistently enriched TFs across treatments/groups
+identify_consistent_tfs <- function(tf_data, min_frequency = 2, analysis_type) {
+  if (is.null(tf_data) || is.null(tf_data$tf_freq_data)) {
+    message("No frequency data available for ", analysis_type)
+    return(NULL)
+  }
+  
+  # Get TFs that appear in multiple treatments/comparisons
+  consistent_tfs <- tf_data$tf_freq_data %>%
+    filter(count >= min_frequency) %>%
+    arrange(desc(count))
+  
+  cat("  ", analysis_type, "method: Found", nrow(consistent_tfs), "TFs appearing in ≥", min_frequency, "comparisons\n")
+  cat("    Neuro-relevant:", sum(consistent_tfs$is_neuro_related), "\n")
+  
+  return(consistent_tfs)
+}
+
+# Function to compare TFs between cluster and cell type methods
+compare_tfs_between_methods <- function(cluster_tfs, celltype_tfs) {
+  cat("Comparing TFs between cluster and cell type methods...\n")
+  
+  # Get unique TF lists
+  cluster_tf_list <- unique(cluster_tfs$TF)
+  celltype_tf_list <- unique(celltype_tfs$TF)
+  
+  # Find overlaps
+  shared_tfs <- intersect(cluster_tf_list, celltype_tf_list)
+  cluster_only <- setdiff(cluster_tf_list, celltype_tf_list)
+  celltype_only <- setdiff(celltype_tf_list, cluster_tf_list)
+  
+  # Focus on neurodevelopmental TFs
+  neuro_shared <- shared_tfs[sapply(shared_tfs, contains_neuro_motifs)]
+  neuro_cluster_only <- cluster_only[sapply(cluster_only, contains_neuro_motifs)]
+  neuro_celltype_only <- celltype_only[sapply(celltype_only, contains_neuro_motifs)]
+  
+  # Print summary
+  cat("  Total unique TFs:\n")
+  cat("    Cluster method:", length(cluster_tf_list), "\n")
+  cat("    Cell type method:", length(celltype_tf_list), "\n")
+  cat("    Shared:", length(shared_tfs), "\n")
+  cat("    Cluster-only:", length(cluster_only), "\n")
+  cat("    Cell type-only:", length(celltype_only), "\n")
+  
+  cat("  Neuro-relevant TFs:\n")
+  cat("    Shared:", length(neuro_shared), "\n")
+  cat("    Cluster-only:", length(neuro_cluster_only), "\n")
+  cat("    Cell type-only:", length(neuro_celltype_only), "\n")
+  
+  # Calculate overlap percentage
+  total_unique <- length(union(cluster_tf_list, celltype_tf_list))
+  overlap_pct <- (length(shared_tfs) / total_unique) * 100
+  
+  cat("  Overall overlap:", round(overlap_pct, 1), "%\n")
+  
+  return(list(
+    cluster_tfs = cluster_tf_list,
+    celltype_tfs = celltype_tf_list,
+    shared_tfs = shared_tfs,
+    cluster_only = cluster_only,
+    celltype_only = celltype_only,
+    neuro_shared = neuro_shared,
+    neuro_cluster_only = neuro_cluster_only,
+    neuro_celltype_only = neuro_celltype_only,
+    overlap_percentage = overlap_pct
+  ))
+}
+
+# Function to create detailed comparison of shared TFs
+create_shared_tf_comparison <- function(cluster_data, celltype_data, shared_tfs) {
+  if (length(shared_tfs) == 0) {
+    message("No shared TFs to compare")
+    return(NULL)
+  }
+  
+  # Get frequency data for shared TFs - use base R subsetting
+  cluster_freq_data <- as.data.frame(cluster_data$tf_freq_data)
+  cluster_freq <- cluster_freq_data[cluster_freq_data$TF %in% shared_tfs, ]
+  
+  # Select and rename columns manually
+  cluster_freq <- data.frame(
+    TF = cluster_freq$TF,
+    cluster_count = cluster_freq$count,
+    cluster_groups = cluster_freq$clusters,
+    cluster_comparisons = cluster_freq$comparisons,
+    cluster_treatments = cluster_freq$treatments,
+    is_neuro = sapply(cluster_freq$TF, contains_neuro_motifs),
+    stringsAsFactors = FALSE
+  )
+  
+  celltype_freq_data <- as.data.frame(celltype_data$tf_freq_data)
+  celltype_freq <- celltype_freq_data[celltype_freq_data$TF %in% shared_tfs, ]
+  
+  # Select and rename columns manually
+  celltype_freq <- data.frame(
+    TF = celltype_freq$TF,
+    celltype_count = celltype_freq$count,
+    celltype_groups = celltype_freq$cell_types,
+    celltype_comparisons = celltype_freq$treatment_comparisons,
+    celltype_treatments = celltype_freq$treatments,
+    is_neuro = sapply(celltype_freq$TF, contains_neuro_motifs),
+    stringsAsFactors = FALSE
+  )
+  
+  # Merge the data
+  shared_comparison <- merge(cluster_freq, celltype_freq, by = c("TF", "is_neuro"), all = TRUE)
+  
+  # Add comparison metrics
+  shared_comparison$cluster_count[is.na(shared_comparison$cluster_count)] <- 0
+  shared_comparison$celltype_count[is.na(shared_comparison$celltype_count)] <- 0
+  
+  shared_comparison$frequency_ratio <- ifelse(shared_comparison$celltype_count > 0, 
+                                              shared_comparison$cluster_count / shared_comparison$celltype_count, 
+                                              NA)
+  shared_comparison$frequency_difference <- shared_comparison$cluster_count - shared_comparison$celltype_count
+  
+  shared_comparison$more_frequent_in <- ifelse(shared_comparison$cluster_count > shared_comparison$celltype_count, "Cluster",
+                                               ifelse(shared_comparison$celltype_count > shared_comparison$cluster_count, "CellType", "Equal"))
+  
+  # Sort by maximum count
+  max_counts <- pmax(shared_comparison$cluster_count, shared_comparison$celltype_count, na.rm = TRUE)
+  shared_comparison <- shared_comparison[order(max_counts, decreasing = TRUE), ]
+  
+  return(shared_comparison)
+}
+
+# Function to create TF comparison visualizations
+create_tf_visualizations <- function(comparison_results, cluster_data, celltype_data) {
+  
+  # 1. Create Venn diagram
+  if (!is.null(comparison_results$shared_tfs)) {
+    create_tf_venn_diagram(comparison_results)
+  }
+  
+  # 2. Create UpSet plot for better overlap visualization
+  create_tf_upset_plot(comparison_results)
+  
+  # 3. Create frequency comparison plot
+  create_frequency_comparison_plot(cluster_data, celltype_data, comparison_results)
+  
+  # 4. Create neurodevelopmental TF focus plot
+  create_neuro_tf_plot(comparison_results)
+  
+  # 5. Create detailed heatmap of shared TFs
+  create_shared_tf_heatmap(cluster_data, celltype_data, comparison_results$shared_tfs)
+}
+
+# Function to create Venn diagram
+create_tf_venn_diagram <- function(comparison_results) {
+  tryCatch({
+    # All TFs
+    venn.diagram(
+      x = list(
+        Cluster = comparison_results$cluster_tfs,
+        CellType = comparison_results$celltype_tfs
+      ),
+      filename = "TF_Comparison_All_Venn.png",
+      output = TRUE,
+      imagetype = "png",
+      height = 3000, width = 3000, resolution = 300,
+      col = "transparent",
+      fill = c("lightblue", "lightcoral"),
+      alpha = 0.50,
+      label.col = c("darkblue", "darkred", "darkgreen"),
+      cex = 2, fontfamily = "serif", fontface = "bold",
+      cat.col = c("darkblue", "darkred"),
+      cat.cex = 2, cat.fontfamily = "serif",
+      main = "TF Overlap: Cluster vs Cell Type Methods",
+      main.cex = 2
+    )
+    
+    # Neuro-relevant TFs only
+    neuro_cluster <- comparison_results$cluster_tfs[sapply(comparison_results$cluster_tfs, contains_neuro_motifs)]
+    neuro_celltype <- comparison_results$celltype_tfs[sapply(comparison_results$celltype_tfs, contains_neuro_motifs)]
+    
+    if (length(neuro_cluster) > 0 && length(neuro_celltype) > 0) {
+      venn.diagram(
+        x = list(
+          Cluster = neuro_cluster,
+          CellType = neuro_celltype
+        ),
+        filename = "TF_Comparison_Neuro_Venn.png",
+        output = TRUE,
+        imagetype = "png",
+        height = 3000, width = 3000, resolution = 300,
+        col = "transparent",
+        fill = c("lightgreen", "orange"),
+        alpha = 0.50,
+        label.col = c("darkgreen", "darkorange", "darkblue"),
+        cex = 2, fontfamily = "serif", fontface = "bold",
+        cat.col = c("darkgreen", "darkorange"),
+        cat.cex = 2, cat.fontfamily = "serif",
+        main = "Neuro-relevant TF Overlap: Cluster vs Cell Type",
+        main.cex = 2
+      )
+    }
+  }, error = function(e) {
+    message("Error creating Venn diagrams: ", e$message)
+  })
+}
+
+# Function to create UpSet plot
+create_tf_upset_plot <- function(comparison_results) {
+  tryCatch({
+    # Create binary matrix for UpSet plot
+    all_tfs <- union(comparison_results$cluster_tfs, comparison_results$celltype_tfs)
+    
+    upset_data <- data.frame(
+      TF = all_tfs,
+      Cluster = as.numeric(all_tfs %in% comparison_results$cluster_tfs),
+      CellType = as.numeric(all_tfs %in% comparison_results$celltype_tfs),
+      stringsAsFactors = FALSE
+    )
+    
+    # Create UpSet plot
+    pdf("TF_Comparison_UpSet.pdf", width = 10, height = 6)
+    upset_plot <- upset(upset_data, 
+                        sets = c("Cluster", "CellType"),
+                        order.by = "freq",
+                        main.bar.color = "steelblue",
+                        sets.bar.color = "darkred",
+                        text.scale = 1.5)
+    print(upset_plot)
+    dev.off()
+    
+  }, error = function(e) {
+    message("Error creating UpSet plot: ", e$message)
+  })
+}
+
+# Function to create frequency comparison plot
+create_frequency_comparison_plot <- function(cluster_data, celltype_data, comparison_results) {
+  if (is.null(cluster_data$tf_freq_data) || is.null(celltype_data$tf_freq_data)) {
+    message("Frequency data not available for comparison plot")
+    return(NULL)
+  }
+  
+  tryCatch({
+    # Prepare data for shared TFs
+    shared_tfs <- comparison_results$shared_tfs
+    
+    if (length(shared_tfs) > 0) {
+      # Use base R subsetting instead of dplyr
+      cluster_freq_data <- as.data.frame(cluster_data$tf_freq_data)
+      cluster_freq <- cluster_freq_data[cluster_freq_data$TF %in% shared_tfs, ]
+      cluster_freq <- data.frame(
+        TF = cluster_freq$TF,
+        count = cluster_freq$count,
+        is_neuro_related = cluster_freq$is_neuro_related,
+        method = "Cluster",
+        stringsAsFactors = FALSE
+      )
+      
+      celltype_freq_data <- as.data.frame(celltype_data$tf_freq_data)
+      celltype_freq <- celltype_freq_data[celltype_freq_data$TF %in% shared_tfs, ]
+      celltype_freq <- data.frame(
+        TF = celltype_freq$TF,
+        count = celltype_freq$count,
+        is_neuro_related = celltype_freq$is_neuro_related,
+        method = "CellType",
+        stringsAsFactors = FALSE
+      )
+      
+      # Combine data
+      freq_comparison <- rbind(cluster_freq, celltype_freq)
+      
+      # Create scatter plot data manually
+      freq_wide <- freq_comparison %>%
+        pivot_wider(names_from = method, values_from = count, values_fill = 0)
+      
+      freq_plot <- ggplot(freq_wide, aes(x = Cluster, y = CellType, color = is_neuro_related)) +
+        geom_point(size = 3, alpha = 0.7) +
+        geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+        scale_color_manual(values = c("FALSE" = "gray", "TRUE" = "red"),
+                           name = "Neuro-relevant") +
+        theme_minimal() +
+        labs(title = "TF Frequency Comparison: Cluster vs Cell Type Methods",
+             x = "Frequency in Cluster Method",
+             y = "Frequency in Cell Type Method") +
+        theme(plot.title = element_text(hjust = 0.5))
+      
+      ggsave("TF_Frequency_Comparison.pdf", freq_plot, width = 10, height = 8)
+      print(freq_plot)
+    }
+  }, error = function(e) {
+    message("Error creating frequency comparison plot: ", e$message)
+  })
+}
+
+# Function to create neurodevelopmental TF focus plot
+create_neuro_tf_plot <- function(comparison_results) {
+  tryCatch({
+    # Prepare data for neurodevelopmental TFs
+    neuro_data <- data.frame(
+      Category = c("Shared", "Cluster Only", "Cell Type Only"),
+      Count = c(length(comparison_results$neuro_shared),
+                length(comparison_results$neuro_cluster_only),
+                length(comparison_results$neuro_celltype_only)),
+      stringsAsFactors = FALSE
+    )
+    
+    # Create bar plot
+    neuro_plot <- ggplot(neuro_data, aes(x = Category, y = Count, fill = Category)) +
+      geom_bar(stat = "identity", alpha = 0.8) +
+      scale_fill_viridis_d(option = "plasma") +
+      theme_minimal() +
+      labs(title = "Neurodevelopmental TFs: Method Comparison",
+           x = "Category", y = "Number of TFs") +
+      theme(plot.title = element_text(hjust = 0.5),
+            legend.position = "none") +
+      geom_text(aes(label = Count), vjust = -0.5, size = 4)
+    
+    ggsave("Neuro_TF_Comparison.pdf", neuro_plot, width = 8, height = 6)
+    print(neuro_plot)
+    
+  }, error = function(e) {
+    message("Error creating neurodevelopmental TF plot: ", e$message)
+  })
+}
+
+# Function to create shared TF heatmap
+create_shared_tf_heatmap <- function(cluster_data, celltype_data, shared_tfs) {
+  if (length(shared_tfs) == 0 || is.null(cluster_data$tf_freq_data) || is.null(celltype_data$tf_freq_data)) {
+    message("Cannot create heatmap: insufficient data")
+    return(NULL)
+  }
+  
+  tryCatch({
+    # Get top shared TFs (by combined frequency)
+    top_shared <- min(30, length(shared_tfs))  # Top 30 or all if fewer
+    
+    # Use base R subsetting
+    cluster_freq_data <- as.data.frame(cluster_data$tf_freq_data)
+    cluster_freq <- cluster_freq_data[cluster_freq_data$TF %in% shared_tfs, ]
+    cluster_freq <- data.frame(
+      TF = cluster_freq$TF,
+      cluster_count = cluster_freq$count,
+      stringsAsFactors = FALSE
+    )
+    
+    celltype_freq_data <- as.data.frame(celltype_data$tf_freq_data)
+    celltype_freq <- celltype_freq_data[celltype_freq_data$TF %in% shared_tfs, ]
+    celltype_freq <- data.frame(
+      TF = celltype_freq$TF,
+      celltype_count = celltype_freq$count,
+      stringsAsFactors = FALSE
+    )
+    
+    # Combine and get top TFs using base R
+    combined_freq <- merge(cluster_freq, celltype_freq, by = "TF", all = TRUE)
+    combined_freq$cluster_count[is.na(combined_freq$cluster_count)] <- 0
+    combined_freq$celltype_count[is.na(combined_freq$celltype_count)] <- 0
+    combined_freq$total_count <- combined_freq$cluster_count + combined_freq$celltype_count
+    
+    # Sort and get top TFs
+    combined_freq <- combined_freq[order(combined_freq$total_count, decreasing = TRUE), ]
+    combined_freq <- combined_freq[1:min(top_shared, nrow(combined_freq)), ]
+    
+    # Create matrix for heatmap
+    heatmap_matrix <- as.matrix(combined_freq[, c("cluster_count", "celltype_count")])
+    rownames(heatmap_matrix) <- combined_freq$TF
+    colnames(heatmap_matrix) <- c("Cluster Method", "Cell Type Method")
+    
+    # Create heatmap
+    pdf("Shared_TF_Frequency_Heatmap.pdf", width = 8, height = 12)
+    pheatmap(heatmap_matrix,
+             color = viridis(100),
+             cluster_rows = TRUE,
+             cluster_cols = FALSE,
+             main = paste("Top", nrow(heatmap_matrix), "Shared TFs by Frequency"),
+             fontsize = 10,
+             scale = "none",
+             display_numbers = TRUE,
+             number_color = "white")
+    dev.off()
+    
+  }, error = function(e) {
+    message("Error creating shared TF heatmap: ", e$message)
+  })
+}
+
+# Function to create visualizations for cell type only analysis
+create_celltype_only_visualizations <- function(celltype_data, celltype_consistent) {
+  tryCatch({
+    # Top TFs bar plot
+    top_tfs <- celltype_consistent %>%
+      head(20) %>%
+      mutate(TF = factor(TF, levels = rev(TF)))
+    
+    tf_plot <- ggplot(top_tfs, aes(x = TF, y = count, fill = is_neuro_related)) +
+      geom_bar(stat = "identity") +
+      coord_flip() +
+      scale_fill_manual(values = c("FALSE" = "gray70", "TRUE" = "red"),
+                        name = "Neuro-relevant") +
+      theme_minimal() +
+      labs(title = "Top 20 TFs in Cell Type Analysis",
+           x = "Transcription Factor", 
+           y = "Frequency (Number of Comparisons)")
+    
+    ggsave("CellType_Top_TFs.pdf", tf_plot, width = 10, height = 8)
+    print(tf_plot)
+    
+    # Neuro vs non-neuro comparison
+    neuro_summary <- celltype_consistent %>%
+      group_by(is_neuro_related) %>%
+      summarise(
+        count = n(),
+        avg_frequency = mean(count),
+        .groups = 'drop'
+      ) %>%
+      mutate(category = ifelse(is_neuro_related, "Neuro-relevant", "Other"))
+    
+    neuro_plot <- ggplot(neuro_summary, aes(x = category, y = count, fill = category)) +
+      geom_bar(stat = "identity") +
+      scale_fill_manual(values = c("Neuro-relevant" = "red", "Other" = "gray70")) +
+      theme_minimal() +
+      labs(title = "TF Categories in Cell Type Analysis",
+           x = "Category", y = "Number of TFs") +
+      theme(legend.position = "none") +
+      geom_text(aes(label = count), vjust = -0.5, size = 4)
+    
+    ggsave("CellType_Neuro_Categories.pdf", neuro_plot, width = 8, height = 6)
+    print(neuro_plot)
+    
+  }, error = function(e) {
+    message("Error creating cell type visualizations: ", e$message)
+  })
+}
+
+# Function to create visualizations for cluster only analysis
+create_cluster_only_visualizations <- function(cluster_data, cluster_consistent) {
+  tryCatch({
+    # Top TFs bar plot
+    top_tfs <- cluster_consistent %>%
+      head(20) %>%
+      mutate(TF = factor(TF, levels = rev(TF)))
+    
+    tf_plot <- ggplot(top_tfs, aes(x = TF, y = count, fill = is_neuro_related)) +
+      geom_bar(stat = "identity") +
+      coord_flip() +
+      scale_fill_manual(values = c("FALSE" = "gray70", "TRUE" = "blue"),
+                        name = "Neuro-relevant") +
+      theme_minimal() +
+      labs(title = "Top 20 TFs in Cluster Analysis",
+           x = "Transcription Factor", 
+           y = "Frequency (Number of Comparisons)")
+    
+    ggsave("Cluster_Top_TFs.pdf", tf_plot, width = 10, height = 8)
+    print(tf_plot)
+    
+    # Neuro vs non-neuro comparison
+    neuro_summary <- cluster_consistent %>%
+      group_by(is_neuro_related) %>%
+      summarise(
+        count = n(),
+        avg_frequency = mean(count),
+        .groups = 'drop'
+      ) %>%
+      mutate(category = ifelse(is_neuro_related, "Neuro-relevant", "Other"))
+    
+    neuro_plot <- ggplot(neuro_summary, aes(x = category, y = count, fill = category)) +
+      geom_bar(stat = "identity") +
+      scale_fill_manual(values = c("Neuro-relevant" = "blue", "Other" = "gray70")) +
+      theme_minimal() +
+      labs(title = "TF Categories in Cluster Analysis",
+           x = "Category", y = "Number of TFs") +
+      theme(legend.position = "none") +
+      geom_text(aes(label = count), vjust = -0.5, size = 4)
+    
+    ggsave("Cluster_Neuro_Categories.pdf", neuro_plot, width = 8, height = 6)
+    print(neuro_plot)
+    
+  }, error = function(e) {
+    message("Error creating cluster visualizations: ", e$message)
+  })
+}
+
+# Main comparison function
+compare_cluster_vs_celltype_tf_results <- function() {
+  cat("=== TF ENRICHMENT COMPARISON: CLUSTER vs CELL TYPE METHODS ===\n\n")
+  
+  # Read data from both methods
+  cat("Step 1: Reading TF summary data...\n")
+  cluster_data <- read_tf_summary_data("cluster")
+  celltype_data <- read_tf_summary_data("celltype")
+  
+  if (is.null(cluster_data) && is.null(celltype_data)) {
+    stop("No TF summary data found. Please run the GO/KEGG analysis first.")
+  }
+  
+  # Identify consistently enriched TFs
+  cat("\nStep 2: Identifying consistently enriched TFs...\n")
+  cluster_consistent <- if (!is.null(cluster_data)) {
+    identify_consistent_tfs(cluster_data, min_frequency = 2, "cluster")
+  } else { NULL }
+  
+  celltype_consistent <- if (!is.null(celltype_data)) {
+    identify_consistent_tfs(celltype_data, min_frequency = 2, "celltype")
+  } else { NULL }
+  
+  # Compare methods or analyze individual method
+  comparison_results <- NULL
+  if (!is.null(cluster_consistent) && !is.null(celltype_consistent)) {
+    cat("\nStep 3: Comparing TFs between methods...\n")
+    comparison_results <- compare_tfs_between_methods(cluster_consistent, celltype_consistent)
+    
+    # Create detailed comparison
+    cat("\nStep 4: Creating detailed comparison of shared TFs...\n")
+    shared_comparison <- create_shared_tf_comparison(cluster_data, celltype_data, comparison_results$shared_tfs)
+    
+    # Save results
+    cat("\nStep 5: Saving comparison results...\n")
+    
+    # Save summary
+    summary_df <- data.frame(
+      Metric = c("Total Cluster TFs", "Total Cell Type TFs", "Shared TFs", 
+                 "Cluster Only", "Cell Type Only", "Neuro Shared", 
+                 "Neuro Cluster Only", "Neuro Cell Type Only", "Overlap Percentage"),
+      Value = c(length(comparison_results$cluster_tfs), 
+                length(comparison_results$celltype_tfs),
+                length(comparison_results$shared_tfs),
+                length(comparison_results$cluster_only),
+                length(comparison_results$celltype_only),
+                length(comparison_results$neuro_shared),
+                length(comparison_results$neuro_cluster_only),
+                length(comparison_results$neuro_celltype_only),
+                round(comparison_results$overlap_percentage, 2))
+    )
+    write.csv(summary_df, "TF_Comparison_Summary.csv", row.names = FALSE)
+    
+    # Save detailed results
+    if (!is.null(shared_comparison)) {
+      write.csv(shared_comparison, "Shared_TF_Detailed_Comparison.csv", row.names = FALSE)
+    }
+    
+    # Save category lists
+    write.csv(data.frame(TF = comparison_results$shared_tfs), "Shared_TFs.csv", row.names = FALSE)
+    write.csv(data.frame(TF = comparison_results$cluster_only), "Cluster_Only_TFs.csv", row.names = FALSE)
+    write.csv(data.frame(TF = comparison_results$celltype_only), "CellType_Only_TFs.csv", row.names = FALSE)
+    write.csv(data.frame(TF = comparison_results$neuro_shared), "Neuro_Shared_TFs.csv", row.names = FALSE)
+    
+    # Create visualizations
+    cat("\nStep 6: Creating visualizations...\n")
+    create_tf_visualizations(comparison_results, cluster_data, celltype_data)
+    
+  } else if (!is.null(celltype_consistent)) {
+    cat("\nStep 3: Only cell type data available - performing single method analysis...\n")
+    
+    # Analyze cell type data independently
+    celltype_summary <- celltype_consistent %>%
+      arrange(desc(count)) %>%
+      mutate(
+        rank = row_number(),
+        category = ifelse(is_neuro_related, "Neuro-relevant", "Other")
+      )
+    
+    # Save cell type only results
+    write.csv(celltype_summary, "CellType_TF_Analysis.csv", row.names = FALSE)
+    
+    # Create cell type specific visualizations
+    cat("\nStep 4: Creating cell type visualizations...\n")
+    create_celltype_only_visualizations(celltype_data, celltype_consistent)
+    
+    cat("Cell type analysis complete. To enable comparison, run cluster analysis first.\n")
+    
+  } else if (!is.null(cluster_consistent)) {
+    cat("\nStep 3: Only cluster data available - performing single method analysis...\n")
+    
+    # Analyze cluster data independently
+    cluster_summary <- cluster_consistent %>%
+      arrange(desc(count)) %>%
+      mutate(
+        rank = row_number(),
+        category = ifelse(is_neuro_related, "Neuro-relevant", "Other")
+      )
+    
+    # Save cluster only results
+    write.csv(cluster_summary, "Cluster_TF_Analysis.csv", row.names = FALSE)
+    
+    # Create cluster specific visualizations
+    cat("\nStep 4: Creating cluster visualizations...\n")
+    create_cluster_only_visualizations(cluster_data, cluster_consistent)
+    
+    cat("Cluster analysis complete. To enable comparison, run cell type analysis first.\n")
+    
+  } else {
+    cat("Could not perform comparison - data from both methods required\n")
+  }
+  
+  # Function to create visualizations for cell type only analysis
+  create_celltype_only_visualizations <- function(celltype_data, celltype_consistent) {
+    tryCatch({
+      # Top TFs bar plot
+      top_tfs <- celltype_consistent %>%
+        head(20) %>%
+        mutate(TF = factor(TF, levels = rev(TF)))
+      
+      tf_plot <- ggplot(top_tfs, aes(x = TF, y = count, fill = is_neuro_related)) +
+        geom_bar(stat = "identity") +
+        coord_flip() +
+        scale_fill_manual(values = c("FALSE" = "gray70", "TRUE" = "red"),
+                          name = "Neuro-relevant") +
+        theme_minimal() +
+        labs(title = "Top 20 TFs in Cell Type Analysis",
+             x = "Transcription Factor", 
+             y = "Frequency (Number of Comparisons)")
+      
+      ggsave("CellType_Top_TFs.pdf", tf_plot, width = 10, height = 8)
+      print(tf_plot)
+      
+      # Neuro vs non-neuro comparison
+      neuro_summary <- celltype_consistent %>%
+        group_by(is_neuro_related) %>%
+        summarise(
+          count = n(),
+          avg_frequency = mean(count),
+          .groups = 'drop'
+        ) %>%
+        mutate(category = ifelse(is_neuro_related, "Neuro-relevant", "Other"))
+      
+      neuro_plot <- ggplot(neuro_summary, aes(x = category, y = count, fill = category)) +
+        geom_bar(stat = "identity") +
+        scale_fill_manual(values = c("Neuro-relevant" = "red", "Other" = "gray70")) +
+        theme_minimal() +
+        labs(title = "TF Categories in Cell Type Analysis",
+             x = "Category", y = "Number of TFs") +
+        theme(legend.position = "none") +
+        geom_text(aes(label = count), vjust = -0.5, size = 4)
+      
+      ggsave("CellType_Neuro_Categories.pdf", neuro_plot, width = 8, height = 6)
+      print(neuro_plot)
+      
+    }, error = function(e) {
+      message("Error creating cell type visualizations: ", e$message)
+    })
+  }
+  
+  # Function to create visualizations for cluster only analysis
+  create_cluster_only_visualizations <- function(cluster_data, cluster_consistent) {
+    tryCatch({
+      # Top TFs bar plot
+      top_tfs <- cluster_consistent %>%
+        head(20) %>%
+        mutate(TF = factor(TF, levels = rev(TF)))
+      
+      tf_plot <- ggplot(top_tfs, aes(x = TF, y = count, fill = is_neuro_related)) +
+        geom_bar(stat = "identity") +
+        coord_flip() +
+        scale_fill_manual(values = c("FALSE" = "gray70", "TRUE" = "blue"),
+                          name = "Neuro-relevant") +
+        theme_minimal() +
+        labs(title = "Top 20 TFs in Cluster Analysis",
+             x = "Transcription Factor", 
+             y = "Frequency (Number of Comparisons)")
+      
+      ggsave("Cluster_Top_TFs.pdf", tf_plot, width = 10, height = 8)
+      print(tf_plot)
+      
+      # Neuro vs non-neuro comparison
+      neuro_summary <- cluster_consistent %>%
+        group_by(is_neuro_related) %>%
+        summarise(
+          count = n(),
+          avg_frequency = mean(count),
+          .groups = 'drop'
+        ) %>%
+        mutate(category = ifelse(is_neuro_related, "Neuro-relevant", "Other"))
+      
+      neuro_plot <- ggplot(neuro_summary, aes(x = category, y = count, fill = category)) +
+        geom_bar(stat = "identity") +
+        scale_fill_manual(values = c("Neuro-relevant" = "blue", "Other" = "gray70")) +
+        theme_minimal() +
+        labs(title = "TF Categories in Cluster Analysis",
+             x = "Category", y = "Number of TFs") +
+        theme(legend.position = "none") +
+        geom_text(aes(label = count), vjust = -0.5, size = 4)
+      
+      ggsave("Cluster_Neuro_Categories.pdf", neuro_plot, width = 8, height = 6)
+      print(neuro_plot)
+      
+    }, error = function(e) {
+      message("Error creating cluster visualizations: ", e$message)
+    })
+  }
+  cat("Output files created:\n")
+  cat("- TF_Comparison_Summary.csv\n")
+  cat("- Shared_TF_Detailed_Comparison.csv\n")
+  cat("- Individual TF category CSV files\n")
+  cat("- Various visualization PDFs and PNGs\n")
+  
+  return(list(
+    cluster_data = cluster_data,
+    celltype_data = celltype_data,
+    cluster_consistent = cluster_consistent,
+    celltype_consistent = celltype_consistent,
+    comparison_results = comparison_results
+  ))
+}
+
+# Execute the comparison
+cat("Starting TF enrichment comparison between cluster and cell type methods...\n")
+cat("Make sure you have run both cluster and cell type GO/KEGG analyses first.\n\n")
+
+tf_comparison_results <- compare_cluster_vs_celltype_tf_results()
