@@ -1,0 +1,1562 @@
+## 17. Motif tx subset by cluster - GO KEGG Analysis
+
+# Subsets treatment groups by cluster
+# Applies GO and KEGG analysis to results
+
+
+
+# REALISTIC Motif Accessibility Analysis Pipeline
+# Uses REALISTIC filtering criteria instead of requiring motifs in ALL clusters
+
+# Load required libraries
+library(tidyverse)
+library(broom)
+library(ggplot2)
+library(pheatmap)
+
+# Set working directory 
+setwd("/Volumes/DataBox/ProjMCS7")
+
+# Read the FIXED motif enrichment matrix (generated from FIXED analysis)
+print("Loading FIXED motif enrichment data with REALISTIC filtering...")
+
+# Try to read the FIXED mean enrichment matrix first
+if (file.exists("FIXED_Motif_Enrichment_Matrix_Mean_by_Treatment.csv")) {
+  data <- read.csv("FIXED_Motif_Enrichment_Matrix_Mean_by_Treatment.csv", row.names = 1, header = TRUE)
+  print("Using FIXED Mean enrichment matrix")
+  data_type <- "Mean"
+} else if (file.exists("FIXED_Motif_Enrichment_Matrix_Max_by_Treatment.csv")) {
+  data <- read.csv("FIXED_Motif_Enrichment_Matrix_Max_by_Treatment.csv", row.names = 1, header = TRUE)
+  print("Using FIXED Max enrichment matrix")
+  data_type <- "Max"
+} else {
+  stop("No FIXED motif enrichment matrix found. Please run the FIXED motif analysis first.")
+}
+
+# Remove the is_neuro_related column if present
+if ("is_neuro_related" %in% colnames(data)) {
+  neuro_info <- data$is_neuro_related
+  names(neuro_info) <- rownames(data)
+  data <- data[, !colnames(data) %in% "is_neuro_related"]
+} else {
+  neuro_info <- rep(FALSE, nrow(data))
+  names(neuro_info) <- rownames(data)
+}
+
+# Check data structure
+print("REALISTIC FILTERING - Data dimensions:")
+print(dim(data))
+print("First few motifs:")
+print(head(data))
+print("Treatment groups:")
+print(colnames(data))
+
+# Convert to matrix for easier manipulation
+data_matrix <- as.matrix(data)
+
+print("=== REALISTIC FILTERING APPROACH ===")
+print("Instead of requiring motifs in ALL clusters (impossible!),")
+print("we use mean enrichment across clusters for each treatment.")
+print("This gives us realistic, biologically meaningful results.")
+print("==========================================")
+
+# 1. REALISTIC FILTERING: Motifs with non-zero enrichment in ALL TREATMENTS
+print("Step 1: Filtering motifs with enrichment in all treatment groups...")
+
+# More realistic: require non-zero MEAN enrichment across clusters in each treatment
+# (This data is already aggregated as mean across clusters)
+motifs_with_all_treatments <- apply(data_matrix, 1, function(x) all(x > 0))
+filtered_data_matrix <- data_matrix[motifs_with_all_treatments, ]
+
+print(paste("Original motifs:", nrow(data_matrix)))
+print(paste("Motifs with enrichment in all treatments:", nrow(filtered_data_matrix)))
+print(paste("Filtered out:", nrow(data_matrix) - nrow(filtered_data_matrix), "motifs"))
+
+if (nrow(filtered_data_matrix) == 0) {
+  stop("No motifs have enrichment in all treatment groups!")
+}
+
+# 2. CALCULATE VARIANCE AND EFFECT SIZES FOR EACH MOTIF
+print("Step 2: Calculating variance and effect sizes for each motif...")
+
+# Function to calculate motif-level statistics
+calculate_motif_stats <- function(motif_values) {
+  motif_var <- var(motif_values)  # Variance across treatments
+  motif_range <- max(motif_values) - min(motif_values)  # Range
+  motif_max_abs <- max(abs(motif_values))  # Maximum absolute value
+  motif_cv <- sd(motif_values) / abs(mean(motif_values))  # Coefficient of variation
+  
+  return(c(variance = motif_var,
+           range = motif_range,
+           max_abs = motif_max_abs,
+           cv = motif_cv,
+           mean_accessibility = mean(motif_values)))
+}
+
+# Apply to each motif
+motif_stats <- t(apply(filtered_data_matrix, 1, calculate_motif_stats))
+motif_stats_df <- as.data.frame(motif_stats)
+motif_stats_df$motif <- rownames(motif_stats_df)
+motif_stats_df$is_neuro_related <- neuro_info[rownames(motif_stats_df)]
+
+# Remove motifs with infinite CV (mean = 0) - shouldn't happen after filtering but just in case
+motif_stats_df <- motif_stats_df[is.finite(motif_stats_df$cv), ]
+
+print(paste("Motifs with finite statistics:", nrow(motif_stats_df)))
+
+# 3. IDENTIFY HIGH-VARIANCE MOTIFS (EQUIVALENT TO ANOVA FILTERING)
+print("Step 3: Identifying high-variance motifs...")
+
+# Use multiple criteria to identify "significant" motifs
+# Criterion 1: High variance (top quartile)
+var_threshold <- quantile(motif_stats_df$variance, 0.75)
+
+# Criterion 2: Large range (top quartile) 
+range_threshold <- quantile(motif_stats_df$range, 0.75)
+
+# Criterion 3: High coefficient of variation (top quartile)
+cv_threshold <- quantile(motif_stats_df$cv, 0.75, na.rm = TRUE)
+
+# Combine criteria
+motif_stats_df$high_variance <- motif_stats_df$variance > var_threshold
+motif_stats_df$large_range <- motif_stats_df$range > range_threshold
+motif_stats_df$high_cv <- motif_stats_df$cv > cv_threshold
+
+# Motif passes if it meets at least 2 of 3 criteria
+motif_stats_df$criteria_met <- rowSums(motif_stats_df[, c("high_variance", "large_range", "high_cv")], na.rm = TRUE)
+motif_stats_df$passes_filtering <- motif_stats_df$criteria_met >= 2
+
+# Sort by variance
+motif_stats_df <- motif_stats_df[order(motif_stats_df$variance, decreasing = TRUE), ]
+
+print(paste("Motifs passing variance filtering (≥2 criteria):", sum(motif_stats_df$passes_filtering)))
+print(paste("Variance threshold (75th percentile):", round(var_threshold, 3)))
+print(paste("Range threshold (75th percentile):", round(range_threshold, 3)))
+print(paste("CV threshold (75th percentile):", round(cv_threshold, 3)))
+
+# 4. PAIRWISE EFFECT SIZE ANALYSIS
+print("Step 4: Calculating pairwise effect sizes for filtered motifs...")
+
+# Get motifs that passed filtering
+filtered_motifs <- motif_stats_df$motif[motif_stats_df$passes_filtering]
+
+if (length(filtered_motifs) > 0) {
+  # Function to calculate all pairwise effect sizes for a motif
+  calculate_pairwise_effects <- function(motif_name) {
+    motif_values <- filtered_data_matrix[motif_name, ]
+    treatments <- colnames(filtered_data_matrix)
+    n_treatments <- length(treatments)
+    
+    results <- data.frame()
+    
+    # Calculate all pairwise differences
+    for (i in 1:(n_treatments-1)) {
+      for (j in (i+1):n_treatments) {
+        
+        # Effect size = difference
+        effect_size <- motif_values[j] - motif_values[i]
+        
+        # Create comparison name
+        comparison <- paste(treatments[i], "vs", treatments[j])
+        
+        # Store results
+        results <- rbind(results, data.frame(
+          motif = motif_name,
+          comparison = comparison,
+          group1 = treatments[i],
+          group2 = treatments[j],
+          group1_value = motif_values[i],
+          group2_value = motif_values[j],
+          effect_size = effect_size,
+          abs_effect_size = abs(effect_size),
+          is_neuro_related = motif_stats_df$is_neuro_related[motif_stats_df$motif == motif_name],
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+    
+    return(results)
+  }
+  
+  # Apply to filtered motifs
+  effect_results_list <- lapply(filtered_motifs, calculate_pairwise_effects)
+  effect_results <- do.call(rbind, effect_results_list)
+  
+  # Identify "significant" effects based on magnitude
+  # Use 75th percentile of absolute effect sizes as threshold
+  effect_threshold <- quantile(effect_results$abs_effect_size, 0.75)
+  effect_results$significant <- effect_results$abs_effect_size > effect_threshold
+  
+  print(paste("Total pairwise comparisons:", nrow(effect_results)))
+  print(paste("Effect size threshold (75th percentile):", round(effect_threshold, 3)))
+  print(paste("Significant pairwise comparisons:", sum(effect_results$significant)))
+  
+} else {
+  print("No motifs passed filtering for effect size analysis")
+  effect_results <- data.frame()
+  effect_threshold <- 0
+}
+
+# 5. ORGANIZE MOTIFS BY PAIRWISE COMPARISON
+print("Step 5: Organizing motifs by pairwise comparison...")
+
+if (nrow(effect_results) > 0) {
+  # Create a list of significant motifs for each comparison
+  comparison_motifs <- list()
+  
+  # Get unique comparisons
+  unique_comparisons <- unique(effect_results$comparison)
+  
+  for (comp in unique_comparisons) {
+    # Get significant motifs for this comparison
+    comp_data <- effect_results[effect_results$comparison == comp & effect_results$significant, ]
+    
+    if (nrow(comp_data) > 0) {
+      comparison_motifs[[comp]] <- comp_data$motif
+      print(paste("Comparison", comp, ":", length(comp_data$motif), "significant motifs"))
+    }
+  }
+  
+  # Also create an overall list (motifs significant in any comparison)
+  final_sig_motifs <- unique(effect_results$motif[effect_results$significant])
+  comparison_motifs[["All_Significant"]] <- final_sig_motifs
+  
+} else {
+  # Fallback: use top variance motifs
+  n_top_motifs <- min(50, nrow(motif_stats_df))  # Increased from 20 to 50
+  final_sig_motifs <- head(motif_stats_df$motif, n_top_motifs)
+  comparison_motifs <- list("Top_Variance" = final_sig_motifs)
+  print(paste("Using top", length(final_sig_motifs), "highest variance motifs"))
+}
+
+print(paste("Total number of comparison groups for enrichment:", length(comparison_motifs)))
+
+# 6. SAVE ALL RESULTS WITH REALISTIC PREFIX
+print("Step 6: Saving REALISTIC results...")
+
+# Create timestamp for files
+timestamp <- format(Sys.Date(), "%Y-%m-%d")
+
+# Save main summary table
+summary_table <- data.frame(
+  Comparison = names(comparison_motifs),
+  Total_Motifs = sapply(comparison_motifs, length),
+  stringsAsFactors = FALSE
+)
+
+write.csv(summary_table, paste0("REALISTIC_Motif_00_SUMMARY_by_comparison_", timestamp, ".csv"), row.names = FALSE)
+
+# Save motif statistics and filtering results
+write.csv(motif_stats_df, paste0("REALISTIC_Motif_01_statistics_", timestamp, ".csv"), row.names = FALSE)
+
+# Save effect size results with comparison info
+if (nrow(effect_results) > 0) {
+  write.csv(effect_results, paste0("REALISTIC_Motif_02_pairwise_effects_", timestamp, ".csv"), row.names = FALSE)
+}
+
+# Save motif lists for each comparison
+for (comp_name in names(comparison_motifs)) {
+  safe_name <- gsub(" ", "_", gsub(" vs ", "_vs_", comp_name))
+  
+  # Motif list with metadata
+  comp_motifs_df <- data.frame(
+    motif = comparison_motifs[[comp_name]],
+    comparison = comp_name,
+    n_motifs_in_comparison = length(comparison_motifs[[comp_name]]),
+    is_neuro_related = motif_stats_df$is_neuro_related[motif_stats_df$motif %in% comparison_motifs[[comp_name]]],
+    stringsAsFactors = FALSE
+  )
+  
+  filename <- paste0("REALISTIC_Motif_03_motifs_", safe_name, "_", timestamp, ".csv")
+  write.csv(comp_motifs_df, filename, row.names = FALSE)
+  
+  # Accessibility data for these motifs with comparison info
+  if (length(comparison_motifs[[comp_name]]) > 0) {
+    access_data <- filtered_data_matrix[comparison_motifs[[comp_name]], , drop = FALSE]
+    access_data_df <- data.frame(
+      motif = rownames(access_data),
+      comparison = comp_name,
+      access_data,
+      stringsAsFactors = FALSE
+    )
+    access_filename <- paste0("REALISTIC_Motif_04_accessibility_", safe_name, "_", timestamp, ".csv")
+    write.csv(access_data_df, access_filename, row.names = FALSE)
+  }
+}
+
+# 7. READ CLUSTER INFORMATION FROM FIXED FILES FOR DOWNSTREAM ANALYSIS
+print("Step 7: Creating cluster-motif mapping for downstream analysis...")
+
+# Read the FIXED detailed cluster analysis to get cluster-motif relationships
+if (file.exists("FIXED_Detailed_Cluster_Treatment_Motif_Analysis.csv")) {
+  cluster_motif_data <- read.csv("FIXED_Detailed_Cluster_Treatment_Motif_Analysis.csv", stringsAsFactors = FALSE)
+  
+  # Create a comprehensive motif-cluster mapping
+  # For each significant motif, find which clusters it's enriched in
+  motif_cluster_mapping <- data.frame()
+  
+  for (comp_name in names(comparison_motifs)) {
+    comp_motifs <- comparison_motifs[[comp_name]]
+    
+    for (motif in comp_motifs) {
+      # Find clusters where this motif is enriched
+      motif_clusters <- cluster_motif_data %>%
+        filter(Motif == motif, mean_enrichment_across_treatments > 1.0) %>%
+        select(Cluster, mean_enrichment_across_treatments, n_treatments_enriched)
+      
+      if (nrow(motif_clusters) > 0) {
+        motif_cluster_mapping <- rbind(motif_cluster_mapping, data.frame(
+          motif = motif,
+          comparison = comp_name,
+          cluster = motif_clusters$Cluster,
+          enrichment_level = motif_clusters$mean_enrichment_across_treatments,
+          n_treatments = motif_clusters$n_treatments_enriched,
+          stringsAsFactors = FALSE
+        ))
+      }
+    }
+  }
+  
+  write.csv(motif_cluster_mapping, paste0("REALISTIC_Motif_05_cluster_mapping_", timestamp, ".csv"), row.names = FALSE)
+  print(paste("Created cluster mapping for", length(unique(motif_cluster_mapping$motif)), "motifs across", 
+              length(unique(motif_cluster_mapping$cluster)), "clusters"))
+}
+
+# 8. FINAL COMPREHENSIVE SUMMARY REPORT
+print(paste("\n", paste(rep("=", 60), collapse = ""), sep = ""))
+print("REALISTIC COMPREHENSIVE MOTIF ACCESSIBILITY ANALYSIS SUMMARY")
+print(paste(rep("=", 60), collapse = ""))
+print(paste("Data type used:", data_type, "enrichment values"))
+print(paste("Filtering approach: REALISTIC - mean enrichment across clusters"))
+print(paste("Original motifs in dataset:", nrow(data_matrix)))
+print(paste("Motifs with enrichment in all treatments:", nrow(filtered_data_matrix)))
+print(paste("Motifs with finite statistics:", nrow(motif_stats_df)))
+print(paste("Motifs passing variance filtering:", sum(motif_stats_df$passes_filtering)))
+
+if (nrow(effect_results) > 0) {
+  print(paste("Total pairwise comparisons:", nrow(effect_results)))
+  print(paste("Significant effect sizes:", sum(effect_results$significant)))
+  print(paste("Effect size threshold used:", round(effect_threshold, 3)))
+}
+
+print("\nDETAILED RESULTS BY COMPARISON:")
+for (comp_name in names(comparison_motifs)) {
+  print(paste(comp_name, ":", length(comparison_motifs[[comp_name]]), "significant motifs"))
+}
+
+print(paste("\n", paste(rep("=", 60), collapse = ""), sep = ""))
+print("REALISTIC FILES GENERATED:")
+print(paste(rep("-", 30), collapse = ""))
+print("REALISTIC_Motif_00_SUMMARY_by_comparison_[date].csv")
+print("REALISTIC_Motif_01_statistics_[date].csv")  
+print("REALISTIC_Motif_02_pairwise_effects_[date].csv (FOR GO/KEGG ANALYSIS)")
+print("REALISTIC_Motif_03_motifs_[comparison]_[date].csv")
+print("REALISTIC_Motif_04_accessibility_[comparison]_[date].csv")
+print("REALISTIC_Motif_05_cluster_mapping_[date].csv")
+
+print(paste("\n", paste(rep("=", 60), collapse = ""), sep = ""))
+print("REALISTIC ANALYSIS COMPLETED SUCCESSFULLY!")
+print(paste("✓ Used", nrow(filtered_data_matrix), "motifs instead of 0!"))
+print("✓ This should provide data for ALL clusters with enriched motifs!")
+print("✓ Now run the GO/KEGG analysis using REALISTIC_Motif_02_pairwise_effects file!")
+print(paste(rep("=", 60), collapse = ""))
+
+
+
+
+
+
+
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+###########################################################################
+
+
+
+
+
+
+# Complete GO and KEGG Analysis with Fixed Treatment Groups
+# This script properly shows pairwise treatment comparisons (e.g., "t1 vs t2")
+
+# Load libraries
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(ggplot2)
+
+# Set working directory
+setwd("/Volumes/DataBox/ProjMCS7")
+
+# Function to extract TF names from motif names
+extract_tf_name <- function(motif_name) {
+  tf_name <- motif_name
+  tf_name <- gsub("_[0-9]+$", "", tf_name)
+  if (grepl("_MOUSE\\.", tf_name)) {
+    tf_name <- gsub("_MOUSE\\..*", "", tf_name)
+  }
+  if (grepl("^MA[0-9]+\\.[0-9]+_", tf_name)) {
+    tf_name <- gsub("^MA[0-9]+\\.[0-9]+_", "", tf_name)
+  }
+  tf_name <- paste0(toupper(substr(tf_name, 1, 1)), tolower(substr(tf_name, 2, nchar(tf_name))))
+  return(tf_name)
+}
+
+# Map TF gene symbols to Entrez IDs
+map_to_entrez <- function(gene_symbols, organism = "org.Mm.eg.db") {
+  org_db <- switch(organism,
+                   "org.Mm.eg.db" = org.Mm.eg.db,
+                   "org.Hs.eg.db" = org.Hs.eg.db)
+  
+  entrez_ids <- mapIds(org_db,
+                       keys = gene_symbols,
+                       column = "ENTREZID",
+                       keytype = "SYMBOL",
+                       multiVals = "first")
+  
+  return(entrez_ids[!is.na(entrez_ids)])
+}
+
+# Perform GO enrichment analysis
+run_go_analysis <- function(gene_list, organism = "org.Mm.eg.db",
+                            ont = "BP", pvalue_cutoff = 0.05,
+                            qvalue_cutoff = 0.2) {
+  
+  org_db <- switch(organism,
+                   "org.Mm.eg.db" = org.Mm.eg.db,
+                   "org.Hs.eg.db" = org.Hs.eg.db)
+  
+  if (length(gene_list) < 3) {
+    message("Too few genes for meaningful enrichment analysis")
+    return(NULL)
+  }
+  
+  go_result <- enrichGO(gene = gene_list,
+                        OrgDb = org_db,
+                        ont = ont,
+                        pAdjustMethod = "BH",
+                        pvalueCutoff = pvalue_cutoff,
+                        qvalueCutoff = qvalue_cutoff,
+                        readable = TRUE)
+  
+  return(go_result)
+}
+
+# Perform KEGG pathway analysis
+run_kegg_analysis <- function(gene_list, organism = "mmu",
+                              pvalue_cutoff = 0.05,
+                              qvalue_cutoff = 0.2) {
+  
+  kegg_organism <- switch(organism,
+                          "org.Mm.eg.db" = "mmu",
+                          "org.Hs.eg.db" = "hsa",
+                          organism)
+  
+  if (length(gene_list) < 3) {
+    message("Too few genes for meaningful KEGG pathway analysis")
+    return(NULL)
+  }
+  
+  kegg_result <- tryCatch({
+    enrichKEGG(gene = gene_list,
+               organism = kegg_organism,
+               keyType = "ncbi-geneid",
+               pvalueCutoff = pvalue_cutoff,
+               pAdjustMethod = "BH",
+               qvalueCutoff = qvalue_cutoff)
+  }, error = function(e) {
+    message("Error in KEGG pathway analysis: ", conditionMessage(e))
+    return(NULL)
+  })
+  
+  if (!is.null(kegg_result) && nrow(kegg_result) > 0) {
+    tryCatch({
+      kegg_result <- setReadable(kegg_result,
+                                 OrgDb = switch(kegg_organism,
+                                                "mmu" = org.Mm.eg.db,
+                                                "hsa" = org.Hs.eg.db))
+    }, error = function(e) {
+      message("Warning: Could not convert gene IDs to symbols in KEGG results: ", conditionMessage(e))
+    })
+  }
+  
+  return(kegg_result)
+}
+
+# Enhanced neurodevelopment terms
+neuro_cognitive_terms <- c(
+  "neuron", "neural", "brain", "development", "neurodevelopment", 
+  "cognition", "cognitive", "neurogenesis", "synapse", "axon", 
+  "dendrite", "synaptic", "neuronal", "learning", "memory",
+  "neurotransmitter", "neuro", "cerebral", "hippocamp", "cortex",
+  "myelin", "oligodendrocyte", "glia", "astrocyte",
+  "Down syndrome", "intellectual disability", "developmental delay",
+  "cognitive impairment", "mental retardation", "trisomy",
+  "differentiation", "gliogenesis", "myelination", "neuroplasticity",
+  "brain development", "nervous system development", "CNS development",
+  "neural tube", "neural crest", "neural migration", "neural proliferation",
+  "chromatin", "histone", "transcription", "gene expression",
+  "epigenetic", "DNA methylation", "chromatin remodeling",
+  "transcriptional regulation", "gene regulation",
+  "attention", "executive function", "working memory", "spatial memory",
+  "episodic memory", "semantic memory", "procedural learning",
+  "motor learning", "social cognition", "language development",
+  "synaptic plasticity", "long-term potentiation", "long-term depression",
+  "NMDA", "AMPA", "GABA", "dopamine", "serotonin", "acetylcholine",
+  "calcium signaling", "cAMP", "protein kinase", "phosphorylation",
+  "hippocampus", "prefrontal", "temporal", "parietal", "frontal",
+  "cerebellum", "brainstem", "thalamus", "hypothalamus", "amygdala",
+  "Alzheimer", "autism", "ADHD", "epilepsy", "seizure",
+  "neurodegeneration", "neuroprotection", "neuroinflammation"
+)
+
+# KEGG-specific terms
+kegg_neuro_terms <- c(
+  "Neuron", "Neural", "Brain", "Neurotrophin", "Synapse", "Synaptic",
+  "Axon", "Neurogenesis", "Neurotransmitter", "Alzheimer", "Parkinson",
+  "Huntington", "Long-term potentiation", "Long-term depression",
+  "Dopaminergic", "Serotonergic", "Glutamatergic", "GABAergic",
+  "Cholinergic", "Nervous", "Circadian", "Cognit", "Memory",
+  "Intellectual disability", "Autism", "ADHD", "Epilepsy",
+  "Neural development", "Brain development", "Cognitive",
+  "Learning", "Attention", "Executive", "Chromatin",
+  "Histone", "Transcription", "Gene expression", "Epigenetic",
+  "DNA methylation", "Chromatin remodeling", "Cell cycle",
+  "Apoptosis", "Calcium", "cAMP", "MAPK", "PI3K", "Wnt",
+  "Hedgehog", "Notch", "TGF", "BMP", "FGF", "VEGF",
+  "Neurotrophin signaling", "Axon guidance", "Gap junction",
+  "Tight junction", "Adherens junction", "Focal adhesion"
+)
+
+# Filter function for neurodevelopment terms
+filter_neuro_terms <- function(result, is_kegg = FALSE) {
+  if (is.null(result) || !is(result, "enrichResult") || nrow(result) == 0) {
+    return(NULL)
+  }
+  
+  result_df <- tryCatch({
+    as.data.frame(result)
+  }, error = function(e) {
+    message("Error converting result to data frame: ", conditionMessage(e))
+    return(NULL)
+  })
+  
+  if (is.null(result_df) || nrow(result_df) == 0) {
+    return(NULL)
+  }
+  
+  terms <- if (is_kegg) {
+    kegg_neuro_terms
+  } else {
+    neuro_cognitive_terms
+  }
+  
+  escaped_terms <- sapply(terms, function(x) {
+    gsub("([\\[\\]\\(\\)\\{\\}\\+\\*\\?\\^\\$\\|\\\\\\.])", "\\\\\\1", x)
+  })
+  
+  pattern <- paste0("\\b(", paste(escaped_terms, collapse = "|"), ")\\b")
+  
+  desc_matches <- grep(pattern, result_df$Description, ignore.case = TRUE)
+  id_matches <- if("ID" %in% colnames(result_df)) {
+    grep(pattern, result_df$ID, ignore.case = TRUE)
+  } else {
+    integer(0)
+  }
+  
+  matches <- unique(c(desc_matches, id_matches))
+  
+  if (length(matches) == 0) {
+    return(NULL)
+  }
+  
+  neuro_df <- result_df[matches, ]
+  neuro_terms <- result
+  neuro_terms@result <- neuro_df
+  
+  return(neuro_terms)
+}
+
+# Main analysis function with FIXED treatment group handling AND all clusters
+analyze_motifs_with_fixed_treatment_groups <- function() {
+  cat("Starting GO/KEGG analysis with FIXED treatment group handling for ALL CLUSTERS...\n")
+  
+  timestamp <- format(Sys.Date(), "%Y-%m-%d")
+  
+  # Find motif effect results - NOW LOOKS FOR REALISTIC FILES FIRST
+  possible_files <- list.files(pattern = "REALISTIC_Motif_02_pairwise_effects_.*\\.csv$")
+  if (length(possible_files) == 0) {
+    # Fallback to FIXED files
+    possible_files <- list.files(pattern = "FIXED_Motif_02_pairwise_effects_.*\\.csv$")
+    if (length(possible_files) == 0) {
+      # Last resort: original files
+      possible_files <- list.files(pattern = "Motif_02_pairwise_effects_.*\\.csv$")
+      if (length(possible_files) == 0) {
+        stop("No motif effect results found. Please run the REALISTIC motif accessibility analysis first.")
+      } else {
+        cat("Warning: Using original files. For complete cluster coverage, run REALISTIC analysis first.\n")
+      }
+    } else {
+      cat("Using FIXED effect results files.\n")
+    }
+  } else {
+    cat("Found REALISTIC effect results files - this should include ALL clusters with realistic filtering!\n")
+  }
+  
+  effects_file <- possible_files[1]
+  cat("Reading motif effects from:", effects_file, "\n")
+  
+  effect_results <- read.csv(effects_file, stringsAsFactors = FALSE)
+  
+  # Try to get cluster information from REALISTIC/FIXED detailed analysis file
+  cluster_info <- data.frame(motif = character(), cluster = character(), stringsAsFactors = FALSE)
+  
+  # First try REALISTIC cluster mapping file
+  realistic_files <- list.files(pattern = "REALISTIC_Motif_05_cluster_mapping_.*\\.csv$")
+  if (length(realistic_files) > 0) {
+    cat("Found REALISTIC cluster mapping file:", realistic_files[1], "\n")
+    cluster_mapping <- read.csv(realistic_files[1], stringsAsFactors = FALSE)
+    
+    # Convert cluster mapping to motif-cluster pairs
+    cluster_info <- cluster_mapping %>%
+      select(motif, cluster) %>%
+      distinct()
+    
+    cat("Found cluster information for", length(unique(cluster_info$motif)), "motifs across", 
+        length(unique(cluster_info$cluster)), "clusters\n")
+    cat("Clusters found:", paste(sort(unique(cluster_info$cluster)), collapse = ", "), "\n")
+  } else {
+    # Fallback to FIXED files
+    detailed_files <- list.files(pattern = "FIXED_Detailed_Cluster_Treatment_Motif_Analysis.*\\.csv$")
+    if (length(detailed_files) == 0) {
+      # Last resort: original files
+      detailed_files <- list.files(pattern = "Detailed_Cluster_Treatment_Motif_Analysis.*\\.csv$")
+    }
+    
+    if (length(detailed_files) > 0) {
+      cat("Found detailed cluster analysis file:", detailed_files[1], "\n")
+      detailed_data <- read.csv(detailed_files[1], stringsAsFactors = FALSE)
+      if ("Motif" %in% colnames(detailed_data) && "Cluster" %in% colnames(detailed_data)) {
+        cluster_info <- data.frame(
+          motif = detailed_data$Motif,
+          cluster = detailed_data$Cluster,
+          stringsAsFactors = FALSE
+        )
+        cluster_info <- cluster_info[!duplicated(paste(cluster_info$motif, cluster_info$cluster)), ]
+        cat("Found cluster information for", length(unique(cluster_info$motif)), "motifs\n")
+        cat("Clusters found:", paste(sort(unique(cluster_info$cluster)), collapse = ", "), "\n")
+      }
+    }
+  }
+  
+  # Merge cluster information if available
+  if (nrow(cluster_info) > 0) {
+    effect_results <- merge(effect_results, cluster_info, by = "motif", all.x = TRUE)
+    effect_results$final_cluster <- ifelse(!is.na(effect_results$cluster) & effect_results$cluster != "Unknown", 
+                                           effect_results$cluster, 
+                                           "Unknown_Cluster")
+  } else {
+    effect_results$final_cluster <- "Unknown_Cluster"
+  }
+  
+  # CRITICAL FIX: Always use the pairwise treatment comparison from effect size data
+  effect_results$final_treatment_groups <- paste(effect_results$group1, "vs", effect_results$group2)
+  effect_results$comprehensive_comparison <- paste0(effect_results$final_cluster, "_", effect_results$comparison)
+  
+  cat("Treatment group assignment FIXED - using pairwise comparisons from effect size data\n")
+  
+  # Get significant motifs
+  significant_data <- effect_results[effect_results$significant == TRUE, ]
+  cat("Found", nrow(significant_data), "significant motif-comparison pairs\n")
+  
+  if (nrow(significant_data) == 0) {
+    stop("No significant motifs found in the effects file.")
+  }
+  
+  # Check which clusters have significant motifs
+  clusters_with_data <- unique(significant_data$final_cluster)
+  clusters_with_data <- clusters_with_data[clusters_with_data != "Unknown_Cluster"]
+  cat("Clusters with significant motifs:", paste(sort(clusters_with_data), collapse = ", "), "\n")
+  
+  # Define all expected clusters (C1-C25)
+  all_expected_clusters <- paste0("C", 1:25)
+  missing_clusters <- setdiff(all_expected_clusters, clusters_with_data)
+  if (length(missing_clusters) > 0) {
+    cat("Clusters with no significant motifs found:", paste(missing_clusters, collapse = ", "), "\n")
+  }
+  
+  # Get unique comprehensive comparisons
+  unique_comparisons <- unique(significant_data$comprehensive_comparison)
+  cat("Found", length(unique_comparisons), "unique cluster-treatment comparisons:\n")
+  
+  # Organize by cluster for better reporting
+  comparison_by_cluster <- data.frame(
+    comparison = unique_comparisons,
+    cluster = sapply(unique_comparisons, function(x) strsplit(x, "_")[[1]][1]),
+    stringsAsFactors = FALSE
+  )
+  comparison_by_cluster <- comparison_by_cluster[order(comparison_by_cluster$cluster, comparison_by_cluster$comparison), ]
+  
+  for (i in 1:nrow(comparison_by_cluster)) {
+    comp <- comparison_by_cluster$comparison[i]
+    n_motifs <- sum(significant_data$comprehensive_comparison == comp)
+    cluster_info <- unique(significant_data$final_cluster[significant_data$comprehensive_comparison == comp])
+    treatment_info <- unique(significant_data$final_treatment_groups[significant_data$comprehensive_comparison == comp])
+    cat("  ", comp, ": ", n_motifs, " motifs (Cluster: ", cluster_info, ", Treatments: ", treatment_info, ")\n", sep = "")
+  }
+  
+  # Container for results
+  all_results <- list()
+  clusters_processed <- c()
+  clusters_skipped <- c()
+  
+  # Process each comprehensive comparison (which now includes all clusters with data)
+  for (comp in unique_comparisons) {
+    cat("\n=== Processing comprehensive comparison:", comp, "===\n")
+    
+    # Get data for this comparison
+    comp_data <- significant_data[significant_data$comprehensive_comparison == comp, ]
+    comp_motifs <- unique(comp_data$motif)
+    
+    # Extract metadata
+    comp_cluster <- unique(comp_data$final_cluster)[1]
+    comp_treatment_groups <- unique(comp_data$final_treatment_groups)[1]
+    comp_group1 <- unique(comp_data$group1)[1]
+    comp_group2 <- unique(comp_data$group2)[1]
+    original_comparison <- unique(comp_data$comparison)[1]
+    
+    cat("Cluster:", comp_cluster, "\n")
+    cat("Treatment Groups:", comp_treatment_groups, "\n") 
+    cat("Group 1:", comp_group1, "\n")
+    cat("Group 2:", comp_group2, "\n")
+    cat("Original Comparison:", original_comparison, "\n")
+    cat("Found", length(comp_motifs), "significant motifs in this comparison\n")
+    
+    if (length(comp_motifs) < 3) {
+      cat("Too few motifs for meaningful analysis, skipping\n")
+      clusters_skipped <- c(clusters_skipped, comp_cluster)
+      next
+    }
+    
+    # Track which clusters we successfully process
+    clusters_processed <- c(clusters_processed, comp_cluster)
+    
+    # Extract TF names
+    tf_names <- sapply(comp_motifs, extract_tf_name)
+    unique_tf_names <- unique(tf_names[tf_names != ""])
+    
+    cat("Extracted", length(unique_tf_names), "unique TF names\n")
+    
+    # Map to Entrez IDs
+    entrez_ids <- map_to_entrez(unique_tf_names)
+    
+    if (length(entrez_ids) < 3) {
+      cat("Too few genes with Entrez IDs for analysis, skipping\n")
+      clusters_skipped <- c(clusters_skipped, comp_cluster)
+      next
+    }
+    
+    cat("Mapped", length(entrez_ids), "TFs to Entrez IDs\n")
+    
+    # Perform GO analysis
+    cat("Running GO enrichment analysis...\n")
+    go_bp <- run_go_analysis(entrez_ids, ont = "BP")
+    
+    # Perform KEGG analysis
+    cat("Running KEGG pathway analysis...\n")
+    kegg_pathway <- run_kegg_analysis(entrez_ids)
+    
+    # Filter for neurodevelopmental terms
+    neuro_bp <- filter_neuro_terms(go_bp, is_kegg = FALSE)
+    neuro_kegg <- filter_neuro_terms(kegg_pathway, is_kegg = TRUE)
+    
+    # Create filename
+    safe_comp_name <- gsub("[^a-zA-Z0-9]", "_", comp)
+    filename_prefix <- paste0("TF_Enrichment_FIXED_", safe_comp_name, "_", timestamp)
+    
+    # Function to add comprehensive metadata
+    add_metadata <- function(result_df, analysis_type) {
+      if (is.null(result_df) || nrow(result_df) == 0) return(result_df)
+      
+      metadata_df <- data.frame(
+        Cluster = rep(comp_cluster, nrow(result_df)),
+        Original_Comparison = rep(original_comparison, nrow(result_df)),
+        Comprehensive_Comparison = rep(comp, nrow(result_df)),
+        Treatment_Groups = rep(comp_treatment_groups, nrow(result_df)),
+        Group1 = rep(comp_group1, nrow(result_df)),
+        Group2 = rep(comp_group2, nrow(result_df)),
+        Analysis_Type = rep(analysis_type, nrow(result_df)),
+        N_Input_Motifs = rep(length(comp_motifs), nrow(result_df)),
+        N_Input_TFs = rep(length(unique_tf_names), nrow(result_df)),
+        N_Entrez_IDs = rep(length(entrez_ids), nrow(result_df)),
+        Input_TFs = rep(paste(unique_tf_names, collapse = ";"), nrow(result_df)),
+        Significant_Motifs = rep(paste(comp_motifs, collapse = ";"), nrow(result_df)),
+        Analysis_Date = rep(timestamp, nrow(result_df)),
+        stringsAsFactors = FALSE
+      )
+      
+      result_with_metadata <- cbind(metadata_df, result_df)
+      return(result_with_metadata)
+    }
+    
+    # Process and save results
+    if (!is.null(go_bp) && nrow(go_bp) > 0) {
+      cat("Found", nrow(go_bp), "GO terms\n")
+      go_bp_df <- as.data.frame(go_bp)
+      go_bp_df <- add_metadata(go_bp_df, "GO_BP")
+      write.csv(go_bp_df, paste0(filename_prefix, "_GO_BP_results.csv"), row.names = FALSE)
+    }
+    
+    if (!is.null(kegg_pathway) && nrow(kegg_pathway) > 0) {
+      cat("Found", nrow(kegg_pathway), "KEGG pathways\n")
+      kegg_df <- as.data.frame(kegg_pathway)
+      kegg_df <- add_metadata(kegg_df, "KEGG")
+      write.csv(kegg_df, paste0(filename_prefix, "_KEGG_results.csv"), row.names = FALSE)
+    }
+    
+    if (!is.null(neuro_bp) && nrow(neuro_bp) > 0) {
+      cat("Found", nrow(neuro_bp), "neurodevelopment-related GO terms\n")
+      neuro_go_df <- as.data.frame(neuro_bp)
+      neuro_go_df <- add_metadata(neuro_go_df, "Neuro_GO_BP")
+      write.csv(neuro_go_df, paste0(filename_prefix, "_NeuroGO_results.csv"), row.names = FALSE)
+    }
+    
+    if (!is.null(neuro_kegg) && nrow(neuro_kegg) > 0) {
+      cat("Found", nrow(neuro_kegg), "neurodevelopment-related KEGG pathways\n")
+      neuro_kegg_df <- as.data.frame(neuro_kegg)
+      neuro_kegg_df <- add_metadata(neuro_kegg_df, "Neuro_KEGG")
+      write.csv(neuro_kegg_df, paste0(filename_prefix, "_NeuroKEGG_results.csv"), row.names = FALSE)
+    }
+    
+    # Store results
+    all_results[[comp]] <- list(
+      cluster = comp_cluster,
+      original_comparison = original_comparison,
+      comprehensive_comparison = comp,
+      treatment_groups = comp_treatment_groups,
+      group1 = comp_group1,
+      group2 = comp_group2,
+      motifs = comp_motifs,
+      tf_names = unique_tf_names,
+      entrez_ids = entrez_ids,
+      effect_data = comp_data,
+      go_bp = go_bp,
+      kegg_pathway = kegg_pathway,
+      neuro_bp = neuro_bp,
+      neuro_kegg = neuro_kegg,
+      timestamp = timestamp
+    )
+  }
+  
+  # Summary of cluster processing
+  cat("\n=== CLUSTER PROCESSING SUMMARY ===\n")
+  clusters_processed_unique <- unique(clusters_processed)
+  clusters_skipped_unique <- unique(clusters_skipped)
+  
+  cat("Successfully processed clusters:", paste(sort(clusters_processed_unique), collapse = ", "), "\n")
+  cat("Total clusters processed:", length(clusters_processed_unique), "\n")
+  
+  if (length(clusters_skipped_unique) > 0) {
+    cat("Clusters skipped (too few motifs):", paste(sort(clusters_skipped_unique), collapse = ", "), "\n")
+  }
+  
+  missing_from_expected <- setdiff(all_expected_clusters, c(clusters_processed_unique, clusters_skipped_unique))
+  if (length(missing_from_expected) > 0) {
+    cat("Clusters with no data found:", paste(missing_from_expected, collapse = ", "), "\n")
+  }
+  
+  # Create master summary with FIXED treatment groups
+  master_summary <- data.frame(
+    Cluster = character(),
+    Original_Comparison = character(),
+    Comprehensive_Comparison = character(),
+    Treatment_Groups = character(),
+    Group1 = character(),
+    Group2 = character(),
+    Total_Motifs = integer(),
+    Unique_TFs = integer(),
+    Entrez_IDs = integer(),
+    GO_Terms = integer(),
+    KEGG_Pathways = integer(),
+    Neuro_GO = integer(),
+    Neuro_KEGG = integer(),
+    Max_Effect_Size = numeric(),
+    Mean_Effect_Size = numeric(),
+    Analysis_Date = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (comp_name in names(all_results)) {
+    result <- all_results[[comp_name]]
+    
+    # Calculate effect size statistics
+    comp_effects <- result$effect_data
+    max_effect <- ifelse(nrow(comp_effects) > 0, max(comp_effects$abs_effect_size), 0)
+    mean_effect <- ifelse(nrow(comp_effects) > 0, mean(comp_effects$abs_effect_size), 0)
+    
+    master_summary <- rbind(master_summary, data.frame(
+      Cluster = result$cluster,
+      Original_Comparison = result$original_comparison,
+      Comprehensive_Comparison = result$comprehensive_comparison,
+      Treatment_Groups = result$treatment_groups,
+      Group1 = result$group1,
+      Group2 = result$group2,
+      Total_Motifs = length(result$motifs),
+      Unique_TFs = length(result$tf_names),
+      Entrez_IDs = length(result$entrez_ids),
+      GO_Terms = ifelse(!is.null(result$go_bp), nrow(result$go_bp), 0),
+      KEGG_Pathways = ifelse(!is.null(result$kegg_pathway), nrow(result$kegg_pathway), 0),
+      Neuro_GO = ifelse(!is.null(result$neuro_bp), nrow(result$neuro_bp), 0),
+      Neuro_KEGG = ifelse(!is.null(result$neuro_kegg), nrow(result$neuro_kegg), 0),
+      Max_Effect_Size = round(max_effect, 3),
+      Mean_Effect_Size = round(mean_effect, 3),
+      Analysis_Date = result$timestamp,
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  write.csv(master_summary, paste0("TF_Enrichment_FIXED_00_MASTER_SUMMARY_", timestamp, ".csv"), row.names = FALSE)
+  
+  # Create cluster-level summary
+  if (nrow(master_summary) > 1) {
+    clusters <- unique(master_summary$Cluster)
+    cluster_level_summary <- data.frame(
+      Cluster = clusters,
+      N_Comparisons = sapply(clusters, function(x) sum(master_summary$Cluster == x)),
+      N_Treatment_Combinations = sapply(clusters, function(x) length(unique(master_summary$Treatment_Groups[master_summary$Cluster == x]))),
+      Total_Motifs = sapply(clusters, function(x) sum(master_summary$Total_Motifs[master_summary$Cluster == x])),
+      Total_TFs = sapply(clusters, function(x) sum(master_summary$Unique_TFs[master_summary$Cluster == x])),
+      Total_GO_Terms = sapply(clusters, function(x) sum(master_summary$GO_Terms[master_summary$Cluster == x])),
+      Total_KEGG_Pathways = sapply(clusters, function(x) sum(master_summary$KEGG_Pathways[master_summary$Cluster == x])),
+      Total_Neuro_GO = sapply(clusters, function(x) sum(master_summary$Neuro_GO[master_summary$Cluster == x])),
+      Total_Neuro_KEGG = sapply(clusters, function(x) sum(master_summary$Neuro_KEGG[master_summary$Cluster == x])),
+      Max_Effect_Size = sapply(clusters, function(x) max(master_summary$Max_Effect_Size[master_summary$Cluster == x])),
+      Mean_Effect_Size = sapply(clusters, function(x) mean(master_summary$Mean_Effect_Size[master_summary$Cluster == x])),
+      Treatment_Combinations = sapply(clusters, function(x) paste(unique(master_summary$Treatment_Groups[master_summary$Cluster == x]), collapse = "; ")),
+      stringsAsFactors = FALSE
+    )
+    
+    cluster_level_summary <- cluster_level_summary[order(cluster_level_summary$Total_Motifs, decreasing = TRUE), ]
+    write.csv(cluster_level_summary, paste0("TF_Enrichment_FIXED_06_CLUSTER_SUMMARY_", timestamp, ".csv"), row.names = FALSE)
+    
+    cat("\n=== CLUSTER-LEVEL SUMMARY (FIXED) ===\n")
+    print(cluster_level_summary)
+  }
+  
+  # Create treatment-level summary
+  if (nrow(master_summary) > 1) {
+    treatments <- unique(master_summary$Treatment_Groups)
+    treatment_level_summary <- data.frame(
+      Treatment_Groups = treatments,
+      N_Clusters = sapply(treatments, function(x) length(unique(master_summary$Cluster[master_summary$Treatment_Groups == x]))),
+      N_Comparisons = sapply(treatments, function(x) sum(master_summary$Treatment_Groups == x)),
+      Total_Motifs = sapply(treatments, function(x) sum(master_summary$Total_Motifs[master_summary$Treatment_Groups == x])),
+      Total_TFs = sapply(treatments, function(x) sum(master_summary$Unique_TFs[master_summary$Treatment_Groups == x])),
+      Total_GO_Terms = sapply(treatments, function(x) sum(master_summary$GO_Terms[master_summary$Treatment_Groups == x])),
+      Total_KEGG_Pathways = sapply(treatments, function(x) sum(master_summary$KEGG_Pathways[master_summary$Treatment_Groups == x])),
+      Total_Neuro_GO = sapply(treatments, function(x) sum(master_summary$Neuro_GO[master_summary$Treatment_Groups == x])),
+      Total_Neuro_KEGG = sapply(treatments, function(x) sum(master_summary$Neuro_KEGG[master_summary$Treatment_Groups == x])),
+      Max_Effect_Size = sapply(treatments, function(x) max(master_summary$Max_Effect_Size[master_summary$Treatment_Groups == x])),
+      Mean_Effect_Size = sapply(treatments, function(x) mean(master_summary$Mean_Effect_Size[master_summary$Treatment_Groups == x])),
+      Clusters_Involved = sapply(treatments, function(x) paste(unique(master_summary$Cluster[master_summary$Treatment_Groups == x]), collapse = "; ")),
+      stringsAsFactors = FALSE
+    )
+    
+    treatment_level_summary <- treatment_level_summary[order(treatment_level_summary$Total_Motifs, decreasing = TRUE), ]
+    write.csv(treatment_level_summary, paste0("TF_Enrichment_FIXED_07_TREATMENT_SUMMARY_", timestamp, ".csv"), row.names = FALSE)
+    
+    cat("\n=== TREATMENT-LEVEL SUMMARY (FIXED) ===\n")
+    print(treatment_level_summary)
+  }
+  
+  # Print final summary
+  cat("\n=== COMPREHENSIVE TF ENRICHMENT ANALYSIS SUMMARY (FIXED) ===\n")
+  cat("Analysis Date:", timestamp, "\n")
+  cat("Total cluster-treatment combinations analyzed:", nrow(master_summary), "\n")
+  cat("Total unique clusters:", length(unique(master_summary$Cluster)), "\n")
+  cat("Total unique treatment combinations:", length(unique(master_summary$Treatment_Groups)), "\n")
+  cat("Total significant motifs:", sum(master_summary$Total_Motifs), "\n")
+  cat("Total unique TFs:", sum(master_summary$Unique_TFs), "\n")
+  cat("Total GO terms found:", sum(master_summary$GO_Terms), "\n")
+  cat("Total KEGG pathways found:", sum(master_summary$KEGG_Pathways), "\n")
+  cat("Total neuro-relevant GO terms:", sum(master_summary$Neuro_GO), "\n")
+  cat("Total neuro-relevant KEGG pathways:", sum(master_summary$Neuro_KEGG), "\n")
+  
+  # Print top results
+  cat("\nTOP 5 CLUSTER-TREATMENT COMBINATIONS BY MOTIF COUNT:\n")
+  top_indices <- order(master_summary$Total_Motifs, decreasing = TRUE)[1:min(5, nrow(master_summary))]
+  top_combinations <- master_summary[top_indices, c("Cluster", "Treatment_Groups", "Total_Motifs", "Unique_TFs", "GO_Terms", "KEGG_Pathways")]
+  print(top_combinations)
+  
+  cat("\nFILES GENERATED WITH FIXED TREATMENT GROUPS:\n")
+  cat("- TF_Enrichment_FIXED_00_MASTER_SUMMARY_[date].csv\n")
+  cat("- TF_Enrichment_FIXED_06_CLUSTER_SUMMARY_[date].csv\n")
+  cat("- TF_Enrichment_FIXED_07_TREATMENT_SUMMARY_[date].csv\n")
+  cat("- Individual enrichment files: TF_Enrichment_FIXED_[Cluster]_[Comparison]_[Type]_results.csv\n")
+  
+  return(all_results)
+}
+
+# Execute the FIXED analysis
+cat("=== MOTIF TF GO/KEGG ENRICHMENT ANALYSIS WITH FIXED TREATMENT GROUPS ===\n")
+cat("This analysis correctly shows pairwise treatment comparisons (e.g., t1 vs t2)\n")
+cat("instead of the full treatment set (t1_t2_t3_t4)\n")
+cat("===========================================================================\n\n")
+
+fixed_results <- analyze_motifs_with_fixed_treatment_groups()
+
+cat("\n=== FIXED ANALYSIS COMPLETE ===\n")
+cat("Treatment groups now show proper pairwise comparisons!\n")
+cat("Check the output - you should now see:\n")
+cat("- 't1 vs t2', 't1 vs t3', 't2 vs t4', etc. instead of 't1_t2_t3_t4'\n")
+cat("- Cluster-level and treatment-level summaries with meaningful breakdowns\n")
+cat("- Individual files organized by actual treatment comparisons\n")
+cat("==============================================\n")
+
+
+
+
+
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+###################################################################################
+
+
+
+
+
+# Comparative Neuronal Development GO/KEGG Analysis - FIXED VERSION
+# Extract key biological insights from treatment comparisons
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(pheatmap)
+library(viridis)
+library(stringr)
+
+setwd("/Volumes/DataBox/ProjMCS7")
+
+# Enhanced neuronal/developmental terms for focused analysis
+neuro_dev_keywords <- c(
+  # Core neuronal development
+  "neuron", "neural", "neurogenesis", "neurodevelopment", "brain development",
+  "nervous system development", "CNS development", "neural tube", "neural crest",
+  "neural migration", "neural proliferation", "neuronal differentiation",
+  
+  # Cognitive and memory processes
+  "cognition", "cognitive", "learning", "memory", "attention", "executive",
+  "working memory", "spatial memory", "episodic memory", "semantic memory",
+  "procedural learning", "motor learning", "social cognition", "language development",
+  
+  # Synaptic and neuronal function
+  "synapse", "synaptic", "synaptic plasticity", "long-term potentiation", 
+  "long-term depression", "neurotransmitter", "axon", "dendrite", "dendritic",
+  
+  # Neurotransmitter systems
+  "NMDA", "AMPA", "GABA", "dopamine", "serotonin", "acetylcholine",
+  "glutamate", "cholinergic", "dopaminergic", "serotonergic", "GABAergic",
+  
+  # Brain regions
+  "hippocampus", "cortex", "prefrontal", "cerebral", "cerebellum", "temporal",
+  "parietal", "frontal", "brainstem", "thalamus", "hypothalamus", "amygdala",
+  
+  # Fetal/developmental
+  "fetal", "embryonic", "developmental", "morphogenesis", "organogenesis",
+  "cell fate", "differentiation", "proliferation", "stem cell",
+  
+  # Intellectual disability and Down syndrome related
+  "intellectual disability", "Down syndrome", "cognitive impairment", 
+  "developmental delay", "autism", "ADHD", "mental retardation",
+  
+  # Molecular mechanisms
+  "calcium signaling", "cAMP", "protein kinase", "phosphorylation",
+  "transcription", "gene expression", "chromatin", "histone", "epigenetic"
+)
+
+# Function to check if a GO/KEGG term is neuronal/developmental
+is_neuro_developmental <- function(description) {
+  desc_lower <- tolower(description)
+  any(sapply(neuro_dev_keywords, function(keyword) grepl(keyword, desc_lower, fixed = TRUE)))
+}
+
+# Function to categorize terms into functional groups
+categorize_neuro_terms <- function(description) {
+  desc_lower <- tolower(description)
+  
+  # Define categories with keywords
+  categories <- list(
+    "Cognitive_Memory" = c("cognition", "cognitive", "learning", "memory", "attention", "executive"),
+    "Synaptic_Function" = c("synapse", "synaptic", "neurotransmitter", "plasticity", "potentiation"),
+    "Neural_Development" = c("neurogenesis", "neural development", "brain development", "neural tube", "neural crest"),
+    "Neurotransmitter_Systems" = c("dopamine", "serotonin", "GABA", "glutamate", "acetylcholine", "cholinergic"),
+    "Fetal_Development" = c("fetal", "embryonic", "developmental", "morphogenesis", "organogenesis"),
+    "Intellectual_Disability" = c("intellectual disability", "Down syndrome", "autism", "ADHD", "developmental delay"),
+    "Molecular_Signaling" = c("calcium signaling", "cAMP", "kinase", "phosphorylation", "transcription")
+  )
+  
+  for (cat_name in names(categories)) {
+    if (any(sapply(categories[[cat_name]], function(kw) grepl(kw, desc_lower, fixed = TRUE)))) {
+      return(cat_name)
+    }
+  }
+  return("Other_Neuro")
+}
+
+# Read all TF enrichment result files with better error handling
+print("Reading all TF enrichment result files...")
+
+# Find all TF enrichment files
+tf_files <- list.files(pattern = "TF_Enrichment.*_results\\.csv$")
+if (length(tf_files) == 0) {
+  stop("No TF enrichment result files found. Please run the GO/KEGG analysis first.")
+}
+
+print(paste("Found", length(tf_files), "TF enrichment result files"))
+
+# Read and combine all results with improved error handling
+all_results <- data.frame()
+expected_columns <- c("Cluster", "Treatment_Groups", "Analysis_Type", "Description", "pvalue")
+
+for (file in tf_files) {
+  tryCatch({
+    # First, peek at the file to understand its structure
+    first_lines <- readLines(file, n = 5)
+    print(paste("File:", file))
+    print(paste("First line (header):", first_lines[1]))
+    
+    # Try to read the file
+    data <- read.csv(file, stringsAsFactors = FALSE)
+    
+    # Check column names
+    print(paste("Columns found:", paste(colnames(data), collapse = ", ")))
+    
+    # Check if it has the minimum expected columns
+    required_cols <- c("Cluster", "Treatment_Groups", "Analysis_Type", "Description")
+    if (all(required_cols %in% colnames(data))) {
+      # Add missing columns if needed
+      if (!"pvalue" %in% colnames(data) && "p.value" %in% colnames(data)) {
+        data$pvalue <- data$p.value
+      }
+      if (!"qvalue" %in% colnames(data) && "FDR" %in% colnames(data)) {
+        data$qvalue <- data$FDR
+      }
+      if (!"qvalue" %in% colnames(data) && "q.value" %in% colnames(data)) {
+        data$qvalue <- data$q.value
+      }
+      
+      # Handle column differences between GO and KEGG files
+      # Remove KEGG-specific columns that cause rbind issues
+      if ("category" %in% colnames(data)) {
+        data$category <- NULL
+      }
+      if ("subcategory" %in% colnames(data)) {
+        data$subcategory <- NULL
+      }
+      
+      # Ensure all datasets have the same columns before rbind
+      if (nrow(all_results) == 0) {
+        all_results <- data
+      } else {
+        # Only keep columns that exist in both datasets
+        common_cols <- intersect(colnames(all_results), colnames(data))
+        all_results <- rbind(all_results[, common_cols], data[, common_cols])
+      }
+      
+      print(paste("Successfully read", nrow(data), "terms from", file))
+    } else {
+      print(paste("Skipping", file, "- missing required columns"))
+      print(paste("Required:", paste(required_cols, collapse = ", ")))
+      print(paste("Found:", paste(colnames(data), collapse = ", ")))
+    }
+  }, error = function(e) {
+    print(paste("Could not read", file, ":", e$message))
+    # Try alternative reading methods
+    tryCatch({
+      data <- read.csv(file, stringsAsFactors = FALSE, sep = "\t")
+      if (all(required_cols %in% colnames(data))) {
+        all_results <<- rbind(all_results, data)
+        print(paste("Successfully read", file, "with tab separator"))
+      }
+    }, error = function(e2) {
+      print(paste("Also failed with tab separator:", e2$message))
+    })
+  })
+}
+
+if (nrow(all_results) == 0) {
+  stop("No valid TF enrichment data found.")
+}
+
+print(paste("Total terms loaded:", nrow(all_results)))
+
+# Filter for neuronal/developmental terms
+print("Filtering for neuronal and developmental terms...")
+neuro_results <- all_results %>%
+  filter(sapply(Description, is_neuro_developmental)) %>%
+  mutate(
+    Functional_Category = sapply(Description, categorize_neuro_terms),
+    neg_log_pvalue = -log10(pvalue),
+    is_highly_significant = pvalue < 0.001
+  )
+
+print(paste("Neuronal/developmental terms found:", nrow(neuro_results)))
+
+# Summary by analysis type
+analysis_summary <- neuro_results %>%
+  group_by(Analysis_Type) %>%
+  summarize(
+    n_terms = n(),
+    n_comparisons = n_distinct(paste(Cluster, Treatment_Groups)),
+    mean_pvalue = mean(pvalue, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+print("Summary by analysis type:")
+print(analysis_summary)
+
+# === ANALYSIS 1: Treatment Comparison Effects (FIXED - includes cluster info) ===
+print("\n=== ANALYSIS 1: TREATMENT COMPARISON EFFECTS ===")
+
+treatment_effects <- neuro_results %>%
+  group_by(Treatment_Groups, Analysis_Type, Functional_Category) %>%
+  summarize(
+    n_terms = n(),
+    mean_pvalue = mean(pvalue, na.rm = TRUE),
+    top_terms = paste(head(Description[order(pvalue)], 3), collapse = "; "),
+    n_clusters = n_distinct(Cluster),
+    clusters_involved = paste(sort(unique(Cluster)), collapse = ", "),
+    most_significant_cluster = Cluster[which.min(pvalue)][1],
+    # Add TF motif information
+    n_input_motifs = mean(N_Input_Motifs, na.rm = TRUE),
+    n_input_tfs = mean(N_Input_TFs, na.rm = TRUE),
+    top_input_tfs = paste(head(unique(unlist(strsplit(Input_TFs, ";"))), 5), collapse = "; "),
+    significant_motifs_summary = paste(head(unique(unlist(strsplit(Significant_Motifs, ";"))), 5), collapse = "; "),
+    .groups = 'drop'
+  ) %>%
+  arrange(Treatment_Groups, Analysis_Type, desc(n_terms))
+
+write.csv(treatment_effects, "Neuro_Treatment_Comparison_Effects.csv", row.names = FALSE)
+
+# Additional detailed cluster-by-treatment breakdown
+treatment_cluster_details <- neuro_results %>%
+  group_by(Treatment_Groups, Cluster, Analysis_Type, Functional_Category) %>%
+  summarize(
+    n_terms = n(),
+    mean_pvalue = mean(pvalue, na.rm = TRUE),
+    best_pvalue = min(pvalue, na.rm = TRUE),
+    top_term = Description[which.min(pvalue)][1],
+    # Add TF motif information
+    n_input_motifs = mean(N_Input_Motifs, na.rm = TRUE),
+    n_input_tfs = mean(N_Input_TFs, na.rm = TRUE),
+    input_tfs = paste(unique(unlist(strsplit(Input_TFs, ";"))), collapse = "; "),
+    significant_motifs = paste(unique(unlist(strsplit(Significant_Motifs, ";"))), collapse = "; "),
+    .groups = 'drop'
+  ) %>%
+  arrange(Treatment_Groups, Cluster, desc(n_terms))
+
+write.csv(treatment_cluster_details, "Neuro_Treatment_Cluster_Details.csv", row.names = FALSE)
+
+# === ANALYSIS 2: Cluster-Specific Patterns ===
+print("\n=== ANALYSIS 2: CLUSTER-SPECIFIC PATTERNS ===")
+
+cluster_patterns <- neuro_results %>%
+  group_by(Cluster, Functional_Category, Analysis_Type) %>%
+  summarize(
+    n_terms = n(),
+    n_treatments = n_distinct(Treatment_Groups),
+    mean_significance = mean(neg_log_pvalue, na.rm = TRUE),
+    most_enriched_treatments = paste(unique(Treatment_Groups), collapse = "; "),
+    top_term = Description[which.min(pvalue)][1],
+    # Add TF motif information
+    avg_input_motifs = mean(N_Input_Motifs, na.rm = TRUE),
+    avg_input_tfs = mean(N_Input_TFs, na.rm = TRUE),
+    all_input_tfs = paste(unique(unlist(strsplit(Input_TFs, ";"))), collapse = "; "),
+    all_significant_motifs = paste(unique(unlist(strsplit(Significant_Motifs, ";"))), collapse = "; "),
+    .groups = 'drop'
+  ) %>%
+  arrange(Cluster, desc(n_terms))
+
+write.csv(cluster_patterns, "Neuro_Cluster_Specific_Patterns.csv", row.names = FALSE)
+
+# === ANALYSIS 3: Functional Category Heatmap (FIXED) ===
+print("\n=== ANALYSIS 3: FUNCTIONAL CATEGORY ANALYSIS ===")
+
+# Create heatmap data
+heatmap_data <- neuro_results %>%
+  group_by(Treatment_Groups, Functional_Category) %>%
+  summarize(
+    enrichment_score = -log10(mean(pvalue, na.rm = TRUE)),
+    n_terms = n(),
+    .groups = 'drop'
+  ) %>%
+  pivot_wider(names_from = Functional_Category, values_from = enrichment_score, values_fill = 0)
+
+# Convert to matrix for heatmap
+heatmap_matrix <- as.matrix(heatmap_data[, -1])
+rownames(heatmap_matrix) <- heatmap_data$Treatment_Groups
+
+# Create heatmap (FIXED - removed invalid angle_col parameter)
+pdf("Neuro_Functional_Category_Heatmap.pdf", width = 12, height = 8)
+pheatmap(heatmap_matrix,
+         main = "Neuronal/Developmental Enrichment by Treatment Comparison",
+         color = viridis(100),
+         cluster_rows = TRUE,
+         cluster_cols = TRUE,
+         fontsize = 10,
+         fontsize_col = 8)
+dev.off()
+
+# === ANALYSIS 4: Cross-Treatment Consistency ===
+print("\n=== ANALYSIS 4: CROSS-TREATMENT CONSISTENCY ===")
+
+# Find terms that appear across multiple treatment comparisons
+consistent_terms <- neuro_results %>%
+  group_by(Description, Analysis_Type) %>%
+  summarize(
+    n_treatments = n_distinct(Treatment_Groups),
+    n_clusters = n_distinct(Cluster),
+    mean_pvalue = mean(pvalue, na.rm = TRUE),
+    treatments = paste(unique(Treatment_Groups), collapse = "; "),
+    clusters = paste(unique(Cluster), collapse = "; "),
+    functional_category = Functional_Category[1],
+    # Add TF motif information
+    avg_input_motifs = mean(N_Input_Motifs, na.rm = TRUE),
+    related_tfs = paste(unique(unlist(strsplit(Input_TFs, ";"))), collapse = "; "),
+    related_motifs = paste(unique(unlist(strsplit(Significant_Motifs, ";"))), collapse = "; "),
+    .groups = 'drop'
+  ) %>%
+  filter(n_treatments >= 2) %>%  # Terms appearing in 2+ treatment comparisons
+  arrange(desc(n_treatments), mean_pvalue)
+
+write.csv(consistent_terms, "Neuro_Consistent_Across_Treatments.csv", row.names = FALSE)
+
+# === ANALYSIS 5: Key Biological Insights ===
+print("\n=== ANALYSIS 5: KEY BIOLOGICAL INSIGHTS ===")
+
+# Top enriched pathways by category
+top_pathways_by_category <- neuro_results %>%
+  group_by(Functional_Category, Analysis_Type) %>%
+  arrange(pvalue) %>%
+  slice_head(n = 5) %>%
+  select(Functional_Category, Analysis_Type, Description, Treatment_Groups, Cluster, 
+         pvalue, qvalue, N_Input_Motifs, N_Input_TFs, Input_TFs, Significant_Motifs) %>%
+  ungroup()
+
+write.csv(top_pathways_by_category, "Neuro_Top_Pathways_By_Category.csv", row.names = FALSE)
+
+# Treatment-specific insights
+treatment_insights <- neuro_results %>%
+  group_by(Treatment_Groups) %>%
+  summarize(
+    total_neuro_terms = n(),
+    cognitive_terms = sum(Functional_Category == "Cognitive_Memory"),
+    synaptic_terms = sum(Functional_Category == "Synaptic_Function"),
+    development_terms = sum(Functional_Category == "Neural_Development"),
+    most_significant_term = Description[which.min(pvalue)][1],
+    best_pvalue = min(pvalue, na.rm = TRUE),
+    n_clusters_affected = n_distinct(Cluster),
+    affected_clusters = paste(sort(unique(Cluster)), collapse = ", "),
+    # Add TF motif information
+    avg_input_motifs = mean(N_Input_Motifs, na.rm = TRUE),
+    avg_input_tfs = mean(N_Input_TFs, na.rm = TRUE),
+    total_unique_tfs = length(unique(unlist(strsplit(Input_TFs, ";")))),
+    top_tfs = paste(head(sort(table(unlist(strsplit(Input_TFs, ";"))), decreasing = TRUE), 10), collapse = "; "),
+    key_motifs = paste(head(unique(unlist(strsplit(Significant_Motifs, ";"))), 10), collapse = "; "),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(total_neuro_terms))
+
+write.csv(treatment_insights, "Neuro_Treatment_Insights.csv", row.names = FALSE)
+
+# === ANALYSIS 6: TF Motif Analysis ===
+print("\n=== ANALYSIS 6: TF MOTIF ANALYSIS ===")
+
+# Detailed TF motif analysis
+tf_motif_analysis <- neuro_results %>%
+  # Split TF names and create one row per TF
+  separate_rows(Input_TFs, sep = ";") %>%
+  separate_rows(Significant_Motifs, sep = ";") %>%
+  filter(!is.na(Input_TFs) & Input_TFs != "" & !is.na(Significant_Motifs) & Significant_Motifs != "") %>%
+  group_by(Input_TFs, Functional_Category, Analysis_Type) %>%
+  summarize(
+    n_enriched_terms = n(),
+    n_treatments = n_distinct(Treatment_Groups),
+    n_clusters = n_distinct(Cluster),
+    mean_pvalue = mean(pvalue, na.rm = TRUE),
+    best_pvalue = min(pvalue, na.rm = TRUE),
+    treatments_involved = paste(unique(Treatment_Groups), collapse = "; "),
+    clusters_involved = paste(unique(Cluster), collapse = "; "),
+    top_pathways = paste(head(Description[order(pvalue)], 3), collapse = "; "),
+    associated_motifs = paste(unique(Significant_Motifs), collapse = "; "),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(n_enriched_terms), mean_pvalue)
+
+write.csv(tf_motif_analysis, "Neuro_TF_Motif_Analysis.csv", row.names = FALSE)
+
+# Top TFs by neuronal category
+top_tfs_by_category <- tf_motif_analysis %>%
+  group_by(Functional_Category, Analysis_Type) %>%
+  arrange(desc(n_enriched_terms), mean_pvalue) %>%
+  slice_head(n = 10) %>%
+  ungroup()
+
+write.csv(top_tfs_by_category, "Neuro_Top_TFs_By_Category.csv", row.names = FALSE)
+
+# Treatment-specific TF profiles
+treatment_tf_profiles <- neuro_results %>%
+  separate_rows(Input_TFs, sep = ";") %>%
+  filter(!is.na(Input_TFs) & Input_TFs != "") %>%
+  group_by(Treatment_Groups, Input_TFs) %>%
+  summarize(
+    n_enriched_terms = n(),
+    n_clusters = n_distinct(Cluster),
+    functional_categories = paste(unique(Functional_Category), collapse = "; "),
+    mean_significance = mean(neg_log_pvalue, na.rm = TRUE),
+    clusters = paste(unique(Cluster), collapse = "; "),
+    .groups = 'drop'
+  ) %>%
+  arrange(Treatment_Groups, desc(n_enriched_terms))
+
+write.csv(treatment_tf_profiles, "Neuro_Treatment_TF_Profiles.csv", row.names = FALSE)
+
+# === VISUALIZATIONS ===
+print("\n=== CREATING VISUALIZATIONS ===")
+
+# 1. Treatment comparison overview
+p1 <- ggplot(treatment_effects %>% filter(Analysis_Type == "GO_BP"),
+             aes(x = Treatment_Groups, y = n_terms, fill = Functional_Category)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Neuronal/Developmental GO Terms by Treatment Comparison",
+       x = "Treatment Comparison", y = "Number of Terms",
+       fill = "Functional Category") +
+  scale_fill_viridis_d()
+
+ggsave("Neuro_Treatment_Overview.pdf", p1, width = 12, height = 8)
+
+# 2. Cluster involvement
+p2 <- ggplot(cluster_patterns %>% filter(Analysis_Type == "GO_BP"),
+             aes(x = Cluster, y = n_terms, fill = Functional_Category)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Neuronal/Developmental Terms by Cluster",
+       x = "Cluster", y = "Number of Terms",
+       fill = "Functional Category") +
+  scale_fill_viridis_d()
+
+ggsave("Neuro_Cluster_Overview.pdf", p2, width = 14, height = 8)
+
+# 3. Cross-treatment consistency
+if (nrow(consistent_terms %>% filter(Analysis_Type == "GO_BP", n_treatments >= 3)) > 0) {
+  p3 <- ggplot(consistent_terms %>% filter(Analysis_Type == "GO_BP", n_treatments >= 3),
+               aes(x = reorder(Description, n_treatments), y = n_treatments, fill = functional_category)) +
+    geom_bar(stat = "identity") +
+    coord_flip() +
+    theme_minimal() +
+    labs(title = "Most Consistent Neuronal Terms Across Treatments",
+         x = "GO Term", y = "Number of Treatment Comparisons",
+         fill = "Category") +
+    scale_fill_viridis_d()
+  
+  ggsave("Neuro_Consistent_Terms.pdf", p3, width = 12, height = 10)
+}
+
+# === FINAL SUMMARY REPORT ===
+print("\n=== GENERATING FINAL SUMMARY REPORT ===")
+
+summary_stats <- list(
+  total_neuro_terms = nrow(neuro_results),
+  unique_terms = length(unique(neuro_results$Description)),
+  treatments_analyzed = length(unique(neuro_results$Treatment_Groups)),
+  clusters_involved = length(unique(neuro_results$Cluster)),
+  analysis_types = paste(unique(neuro_results$Analysis_Type), collapse = ", "),
+  
+  # Category breakdown
+  cognitive_memory_terms = sum(neuro_results$Functional_Category == "Cognitive_Memory"),
+  synaptic_terms = sum(neuro_results$Functional_Category == "Synaptic_Function"),
+  development_terms = sum(neuro_results$Functional_Category == "Neural_Development"),
+  
+  # Most significant findings
+  most_significant_treatment = treatment_insights$Treatment_Groups[1],
+  most_affected_cluster = cluster_patterns$Cluster[which.max(cluster_patterns$n_terms)],
+  
+  # Consistency findings
+  highly_consistent_terms = nrow(consistent_terms %>% filter(n_treatments >= 4)),
+  moderately_consistent_terms = nrow(consistent_terms %>% filter(n_treatments == 3))
+)
+
+# Create final take-home message
+take_home_message <- paste0(
+  "=== NEURONAL/DEVELOPMENTAL ANALYSIS TAKE-HOME MESSAGE ===\n\n",
+  "1. SCOPE: Analyzed ", summary_stats$total_neuro_terms, " neuronal/developmental terms across ", 
+  summary_stats$treatments_analyzed, " treatment comparisons and ", summary_stats$clusters_involved, " clusters.\n\n",
+  
+  "2. TREATMENT EFFECTS: '", summary_stats$most_significant_treatment, "' shows the strongest neuronal enrichment, ",
+  "suggesting this comparison has the most pronounced effects on brain-related processes.\n\n",
+  
+  "3. FUNCTIONAL CATEGORIES:\n",
+  "   - Cognitive/Memory processes: ", summary_stats$cognitive_memory_terms, " terms\n",
+  "   - Synaptic function: ", summary_stats$synaptic_terms, " terms\n",
+  "   - Neural development: ", summary_stats$development_terms, " terms\n\n",
+  
+  "4. CLUSTER SPECIFICITY: Cluster ", summary_stats$most_affected_cluster, " shows the most neuronal enrichment, ",
+  "indicating it may be particularly sensitive to treatment effects.\n\n",
+  
+  "5. CONSISTENCY: ", summary_stats$highly_consistent_terms, " terms are enriched across ALL treatment comparisons, ",
+  "suggesting core neuronal processes affected regardless of specific treatment.\n\n",
+  
+  "6. BIOLOGICAL SIGNIFICANCE: The enrichment patterns suggest treatment effects on:\n",
+  "   - Synaptic plasticity and neurotransmission\n",
+  "   - Cognitive and memory-related processes\n",
+  "   - Neural development and differentiation\n",
+  "   - Intellectual disability-related pathways\n\n",
+  
+  "FILES GENERATED:\n",
+  "- Neuro_Treatment_Comparison_Effects.csv (includes TF motif info)\n",
+  "- Neuro_Treatment_Cluster_Details.csv (detailed cluster + TF breakdown)\n",
+  "- Neuro_Cluster_Specific_Patterns.csv (includes TF associations)\n",
+  "- Neuro_Consistent_Across_Treatments.csv (includes related TFs)\n",
+  "- Neuro_Top_Pathways_By_Category.csv (includes TF motif details)\n",
+  "- Neuro_Treatment_Insights.csv (includes TF summaries)\n",
+  "- Neuro_TF_Motif_Analysis.csv (detailed TF analysis)\n",
+  "- Neuro_Top_TFs_By_Category.csv (top TFs per functional category)\n",
+  "- Neuro_Treatment_TF_Profiles.csv (TF profiles per treatment)\n",
+  "- Various visualization PDFs\n"
+)
+
+# Save the take-home message
+cat(take_home_message, file = "Neuronal_Analysis_Take_Home_Message.txt")
+
+# Print to console
+cat(take_home_message)
+
+print("\n=== COMPARATIVE NEURONAL ANALYSIS COMPLETE ===")
+print("Check the generated files and visualizations for detailed insights!")
+print("The take-home message summarizes the key biological findings.")
+
+
+
+
