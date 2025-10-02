@@ -1,0 +1,203 @@
+
+
+setwd("/Volumes/DataBox/ProjMCS7")
+
+
+## Checking shared motifs across treatment groups:
+
+# Extract unique motif names for each treatment
+t1_motifs <- unique(t1_data$Motif)
+t2_motifs <- unique(t2_data$Motif)
+t3_motifs <- unique(t3_data$Motif)
+t4_motifs <- unique(t4_data$Motif)
+
+# Find intersections
+shared_t1_t2 <- intersect(t1_motifs, t2_motifs)
+shared_t1_t3 <- intersect(t1_motifs, t3_motifs)
+shared_t1_t4 <- intersect(t1_motifs, t4_motifs)
+shared_t2_t3 <- intersect(t2_motifs, t3_motifs)
+shared_t2_t4 <- intersect(t2_motifs, t4_motifs)
+shared_t3_t4 <- intersect(t3_motifs, t4_motifs)
+
+# Find motifs shared across all groups
+shared_all <- Reduce(intersect, list(t1_motifs, t2_motifs, t3_motifs, t4_motifs))
+
+# Print results
+print(paste("Motifs shared between T1 and T2:", length(shared_t1_t2)))
+print(paste("Motifs shared between T1 and T3:", length(shared_t1_t3)))
+print(paste("Motifs shared between T1 and T4:", length(shared_t1_t4)))
+print(paste("Motifs shared between T2 and T3:", length(shared_t2_t3)))
+print(paste("Motifs shared between T2 and T4:", length(shared_t2_t4)))
+print(paste("Motifs shared between T3 and T4:", length(shared_t3_t4)))
+print(paste("Motifs shared by all treatments:", length(shared_all)))
+
+
+## Merge and analyze data
+
+
+library(dplyr)
+library(tidyr)
+library(readr)
+
+# Load the four spreadsheets
+t1_data <- read_csv("t1_motif_enrichment_byCluster_2025-03-26.csv") %>% mutate(Treatment = "t1")
+t2_data <- read_csv("t2_motif_enrichment_byCluster_2025-03-26.csv") %>% mutate(Treatment = "t2")
+t3_data <- read_csv("t3_motif_enrichment_byCluster_2025-03-26.csv") %>% mutate(Treatment = "t3")
+t4_data <- read_csv("t4_motif_enrichment_byCluster_2025-03-26.csv") %>% mutate(Treatment = "t4")
+
+# Combine all treatment data into one dataframe
+combined_data <- bind_rows(t1_data, t2_data, t3_data, t4_data)
+
+# Reshape to long format: one row per (Motif, Cluster, Treatment)
+long_data <- combined_data %>%
+  pivot_longer(cols = starts_with("C"), names_to = "Cluster", values_to = "Motif_Value")
+
+# Check for duplicates
+dup_motifs <- long_data %>%
+  count(Motif, Cluster) %>%
+  filter(n > 1)
+
+print(dup_motifs)  # See if duplicates exist
+
+# Count how many treatment groups have values per motif in each cluster
+motif_presence <- long_data %>%
+  group_by(Motif, Cluster) %>%
+  summarize(Num_Treatments_With_Values = sum(Motif_Value > 0), .groups = "drop")
+
+# Save output to CSV
+write_csv(motif_presence, "motif_comparison_by_treatment.csv")
+
+
+
+## NOTE: Some genes in the results file contain "0" for the number of groups that contain the motif
+# When you use pivot_longer() to reshape your data from wide to long format, 
+#   you're converting cluster columns (C1, C2, etc.) into rows. 
+#   However, if a motif doesn't exist in a particular cluster for any treatment, 
+#   the pivot_longer() operation will still create rows for that motif-cluster combination, 
+#   but with NA or 0 values.
+
+
+
+
+
+######################################################################
+######################################################################
+######################################################################
+
+
+
+# Load required libraries
+library(readr)
+library(dplyr)
+library(tidyr)
+library(limma)
+library(clusterProfiler)
+library(org.Hs.eg.db)  # Human genome annotation (adjust if using a different species)
+
+# Function to read and process motif data
+read_motif_data <- function(file_path) {
+  # Read the CSV file
+  data <- read_csv(file_path, col_names = TRUE)
+  
+  # Pivot the data to long format for easier analysis
+  long_data <- data %>%
+    pivot_longer(cols = starts_with("C"), 
+                 names_to = "Cluster", 
+                 values_to = "Peak_Intensity")
+  
+  return(long_data)
+}
+
+# Read motif data for all treatment groups
+t1_data <- read_motif_data("t1_motif_enrichment_byCluster_2025-03-26.csv")
+t2_data <- read_motif_data("t2_motif_enrichment_byCluster_2025-03-26.csv")
+t3_data <- read_motif_data("t3_motif_enrichment_byCluster_2025-03-26.csv")
+t4_data <- read_motif_data("t4_motif_enrichment_byCluster_2025-03-26.csv")
+
+# Combine data with treatment information
+combined_data <- bind_rows(
+  mutate(t1_data, Treatment = "2N"),
+  mutate(t2_data, Treatment = "2N+"),
+  mutate(t3_data, Treatment = "Ts"),
+  mutate(t4_data, Treatment = "Ts+")
+)
+
+# Perform statistical analysis with Benjamini-Hochberg correction
+# Create a design matrix
+design <- model.matrix(~ Treatment, data = combined_data)
+
+# Fit linear model
+fit <- lmFit(combined_data$Peak_Intensity, design)
+
+# Apply empirical Bayes moderation
+fit_eb <- eBayes(fit)
+
+# Extract top differentially enriched motifs with B-H correction
+top_motifs <- topTable(fit_eb, 
+                       number = Inf, 
+                       adjust.method = "BH", 
+                       p.value = 0.05)
+
+# Prepare gene lists for GO and KEGG analysis
+# Extract significant motif names
+significant_motifs <- top_motifs$ID  # Adjust column name if needed
+
+# Convert motif names to gene symbols (assuming motif names match gene symbols)
+gene_symbols <- gsub("_.*", "", significant_motifs)  # Example: Convert "Tcfap2a_1" to "Tcfap2a"
+
+# Convert gene symbols to Entrez IDs
+gene_mapping <- bitr(gene_symbols, 
+                     fromType = "SYMBOL", 
+                     toType = "ENTREZID", 
+                     OrgDb = org.Mm.eg.db)  
+
+library(biomaRt)
+
+mart <- useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+gene_mapping <- getBM(attributes = c("external_gene_name", "entrezgene_id"),
+                      filters = "external_gene_name",
+                      values = gene_symbols, 
+                      mart = mart)
+colnames(gene_mapping) <- c("SYMBOL", "ENTREZID")
+
+
+# Remove duplicates if necessary
+gene_mapping <- gene_mapping[!duplicated(gene_mapping$ENTREZID), ]
+
+# Perform GO enrichment analysis
+go_enrichment <- enrichGO(
+  gene = gene_mapping$ENTREZID,
+  OrgDb = org.Mm.eg.db,
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.2
+)
+
+# Perform KEGG pathway enrichment
+kegg_enrichment <- enrichKEGG(
+  gene = gene_mapping$ENTREZID,
+  organism = 'mmu',
+  pAdjustMethod = "BH",
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.2
+)
+
+# Visualize results
+# GO enrichment barplot
+barplot(go_enrichment, showCategory = 20)
+
+# KEGG pathway enrichment dotplot
+dotplot(kegg_enrichment, showCategory = 20)
+
+# Save results
+write.csv(top_motifs, "differential_motif_enrichment.csv")
+write.csv(go_enrichment@result, "go_enrichment_results.csv")
+write.csv(kegg_enrichment@result, "kegg_pathway_results.csv")
+
+# Print summary
+print("Analysis Complete:")
+print(paste("Total differential motifs:", nrow(top_motifs)))
+print(paste("Significant GO terms:", nrow(go_enrichment@result)))
+print(paste("Significant KEGG pathways:", nrow(kegg_enrichment@result)))
+
