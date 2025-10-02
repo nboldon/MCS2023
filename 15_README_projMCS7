@@ -58,6 +58,9 @@ Motif Enrichment
 # 15_Peak_Analysis
 Compares marker peaks found in each treatment group
 
+# 15_Pairwise-Peak_Scatterplot
+Scatterplot displaying the number of DA genes by number of cells, colored by cell type
+
 # 15_projMCS9.R
 - Loops through all clusters making pairwise comparisons using peakMatrix
     - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
