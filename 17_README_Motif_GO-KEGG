@@ -1,2 +1,8 @@
 ## 17. Motif GO & KEGG Analysis
 
+# 17_Motif_TxSubset-byCluster_GO-KEGG
+Subsets treatment groups by cluster
+Applies GO and KEGG analysis to results
+
+# 17_Motif_GO-KEGG_Cluster-CellType_ResultsComp
+# Comprehensive Comparison of Cluster-based vs Cell Type-based Motif Enrichment Results
