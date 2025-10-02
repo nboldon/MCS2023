@@ -54,7 +54,10 @@ Motif Enrichment
 - Creates Browser tracks for genes of interest
     - cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
     - File: C18-Tracks-With-PeakFeatures_2024-08-07.pdf & Peak-C3-T1vsT3-Tracks_2024-09-16.pdf
-    
+
+# 15_Peak_Analysis
+Compares marker peaks found in each treatment group
+
 # 15_projMCS9.R
 - Loops through all clusters making pairwise comparisons using peakMatrix
     - cutOff = "FDR <= 0.1 & abs(Log2FC) >=0.5"
