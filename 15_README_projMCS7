@@ -67,5 +67,8 @@ Motif Enrichment
     - File name ex: cluster, "_", useGroup, "vs", bgdGroup, "_Peak9-5_FDR-0-1_Log2FC-0-5_2024-09-13.csv
 - Code repeated to create projMCS9_7; reran pairwise comparison loops. 
 
+# 15_Motif_txComps
+Combines treatment group motif spreadsheets for comparison purposes
+
 # 15_Motif_CellType_PairwiseComps
 Loops through all cell type groupings making pairwise comparisons between each cell type
