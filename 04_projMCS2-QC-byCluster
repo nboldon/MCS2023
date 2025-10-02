@@ -1,5 +1,5 @@
 ## Calculates significant QC differences betwen treatment groups (TSS enrichment & unique frags)
-
+## Creates violin plots to visualize statistical differences
 
 # Primary test: One-way ANOVA comparing 4 treatment groups
 # Multiple testing correction: Benjamini-Hochberg across all clusters
