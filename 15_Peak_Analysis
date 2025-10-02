@@ -1,0 +1,150 @@
+
+
+setwd("/Volumes/DataBox/ProjMCS7")
+
+
+# Load required libraries
+library(readxl)
+library(dplyr)
+library(purrr)
+library(readr)
+
+# Function to read and process each treatment group file
+read_treatment_file <- function(file_path, treatment_group) {
+  # Read the Excel file (assuming .xlsx format, adjust if needed)
+  data <- read_csv(file_path)
+  
+  # Add treatment group identifier
+  data$treatment_group <- treatment_group
+  
+  # Create a unique region identifier for matching
+  data$region_id <- paste(data$seqnames, data$start, data$end, sep = "_")
+  
+  return(data)
+}
+
+# Main analysis function
+analyze_genomic_regions <- function() {
+  
+  # Define your file paths - UPDATE THESE PATHS
+  file_paths <- c(
+    "t1_marker_peaks_2025-03-26.csv",  
+    "t2_marker_peaks_2025-03-26.csv",  
+    "t3_marker_peaks_2025-03-26.csv",
+    "t4_marker_peaks_2025-03-26.csv"
+  )
+  
+  treatment_groups <- c("t1", "t2", "t3", "t4")
+  
+  # Check if all files exist
+  missing_files <- file_paths[!file.exists(file_paths)]
+  if (length(missing_files) > 0) {
+    stop("Missing files: ", paste(missing_files, collapse = ", "))
+  }
+  
+  # Read all treatment files
+  cat("Reading treatment files...\n")
+  all_data <- map2_dfr(file_paths, treatment_groups, read_treatment_file)
+  
+  # Create summary of regions per treatment group
+  region_summary <- all_data %>%
+    group_by(region_id, seqnames, start, end) %>%
+    summarise(
+      treatment_groups = paste(sort(unique(treatment_group)), collapse = ","),
+      n_groups = n_distinct(treatment_group),
+      .groups = "drop"
+    )
+  
+  # Merge back with original data to get all information
+  comprehensive_results <- all_data %>%
+    left_join(region_summary, by = c("region_id", "seqnames", "start", "end")) %>%
+    arrange(desc(n_groups), seqnames, start)
+  
+  # Create different output files for different analyses
+  
+  # 1. Complete dataset with overlap information
+  cat("Creating comprehensive results file...\n")
+  write_csv(comprehensive_results, "all_PeakRegions_with_Txoverlap_2025-06-05.csv")
+  
+  # 2. Only regions found in multiple treatment groups
+  shared_regions <- comprehensive_results %>%
+    filter(n_groups > 1)
+  
+  if (nrow(shared_regions) > 0) {
+    cat("Creating shared regions file...\n")
+    write_csv(shared_regions, "shared_genomic_regions.csv")
+  } else {
+    cat("No shared regions found across treatment groups.\n")
+  }
+  
+  # 3. Summary table of region overlap patterns
+  overlap_summary <- region_summary %>%
+    count(treatment_groups, n_groups, name = "n_regions") %>%
+    arrange(desc(n_groups), desc(n_regions))
+  
+  cat("Creating overlap summary...\n")
+  write_csv(overlap_summary, "overlap_summary_2025-06-05.csv")
+  
+  # 4. Regions unique to each treatment group
+  unique_regions <- comprehensive_results %>%
+    filter(n_groups == 1) %>%
+    select(-region_id) %>%
+    arrange(treatment_group, seqnames, start)
+  
+  cat("Creating unique regions file...\n")
+  write_csv(unique_regions, "unique_regions_per_group_2025-06-05.csv")
+  
+  # Print summary statistics
+  cat("\n=== ANALYSIS SUMMARY ===\n")
+  cat("Total regions analyzed:", nrow(all_data), "\n")
+  cat("Unique genomic regions:", nrow(region_summary), "\n")
+  cat("Regions found in multiple groups:", sum(region_summary$n_groups > 1), "\n")
+  cat("Regions found in all 4 groups:", sum(region_summary$n_groups == 4), "\n")
+  
+  cat("\nRegions per treatment group:\n")
+  group_counts <- all_data %>% count(treatment_group)
+  print(group_counts)
+  
+  cat("\nOverlap patterns:\n")
+  print(overlap_summary)
+  
+  return(list(
+    all_data = comprehensive_results,
+    shared_regions = shared_regions,
+    overlap_summary = overlap_summary,
+    unique_regions = unique_regions
+  ))
+}
+
+# Alternative function if your files are CSV format
+read_treatment_csv <- function(file_path, treatment_group) {
+  data <- read_csv(file_path, show_col_types = FALSE)
+  data$treatment_group <- treatment_group
+  data$region_id <- paste(data$seqnames, data$start, data$end, sep = "_")
+  return(data)
+}
+
+# Function for CSV files (use this instead if your files are .csv)
+analyze_genomic_regions_csv <- function() {
+  file_paths <- c(
+    "t1_marker_peaks_2025-03-26.csv",
+    "t2_marker_peaks_2025-03-26.csv", 
+    "t3_marker_peaks_2025-03-26.csv",
+    "t4_marker_peaks_2025-03-26.csv"
+  )
+  
+  treatment_groups <- c("t1", "t2", "t3", "t4")
+  
+  # Rest of the function is the same, just replace read_treatment_file with read_treatment_csv
+  all_data <- map2_dfr(file_paths, treatment_groups, read_treatment_csv)
+  # ... (rest of analysis code is identical)
+}
+
+# Run the analysis
+# Use this line if your files are Excel format:
+results <- analyze_genomic_regions()
+
+# OR use this line if your files are CSV format:
+# results <- analyze_genomic_regions_csv()
+
+cat("\nAnalysis complete! Check the generated CSV files for results.\n")
