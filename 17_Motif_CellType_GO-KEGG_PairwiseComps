@@ -1,0 +1,1385 @@
+setwd("/Volumes/DataBox/ProjMCS7")
+
+# GO and KEGG Analysis of Combined TF Motif Enrichment Data for Cell Type Comparisons
+# This script processes a combined CSV file of TF motif data across treatment groups within cell types
+# and performs both GO and KEGG enrichment analyses with focus on neurodevelopment functions
+
+# Load libraries
+library(clusterProfiler)
+library(org.Mm.eg.db)  # Mouse database - change to org.Hs.eg.db for human
+library(enrichplot)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(patchwork) # For combining plots
+library(viridis) # For viridis color palettes
+
+# Explicitly load dplyr to avoid namespace conflicts
+library(dplyr, warn.conflicts = FALSE)
+
+# Function to extract TF names from motif name
+extract_tf_name <- function(motif_name) {
+  # Extract TF name from motif name (assuming format like Myc_37)
+  return(sub("_\\d+$", "", motif_name))
+}
+
+# Map TF gene symbols to Entrez IDs
+map_to_entrez <- function(gene_symbols, organism = "org.Mm.eg.db") {
+  # Choose the right organism database
+  org_db <- switch(organism,
+                   "org.Mm.eg.db" = org.Mm.eg.db,
+                   "org.Hs.eg.db" = org.Hs.eg.db)
+  
+  entrez_ids <- mapIds(org_db,
+                       keys = gene_symbols,
+                       column = "ENTREZID",
+                       keytype = "SYMBOL",
+                       multiVals = "first")
+  
+  return(entrez_ids[!is.na(entrez_ids)])
+}
+
+# Perform GO enrichment analysis
+run_go_analysis <- function(gene_list, organism = "org.Mm.eg.db",
+                            ont = "BP", pvalue_cutoff = 0.05,
+                            qvalue_cutoff = 0.2) {
+  org_db <- switch(organism,
+                   "org.Mm.eg.db" = org.Mm.eg.db,
+                   "org.Hs.eg.db" = org.Hs.eg.db)
+  
+  if (length(gene_list) < 3) {
+    message("Too few genes for meaningful enrichment analysis")
+    return(NULL)
+  }
+  
+  go_result <- enrichGO(gene = gene_list,
+                        OrgDb = org_db,
+                        ont = ont,
+                        pAdjustMethod = "BH",
+                        pvalueCutoff = pvalue_cutoff,
+                        qvalueCutoff = qvalue_cutoff,
+                        readable = TRUE)
+  
+  return(go_result)
+}
+
+# Perform KEGG pathway analysis
+run_kegg_analysis <- function(gene_list, organism = "mmu",
+                              pvalue_cutoff = 0.05,
+                              qvalue_cutoff = 0.2) {
+  # Convert organism code if needed
+  kegg_organism <- switch(organism,
+                          "org.Mm.eg.db" = "mmu",  # Mouse
+                          "org.Hs.eg.db" = "hsa",  # Human
+                          organism)  # Use as-is if already in KEGG format
+  
+  if (length(gene_list) < 3) {
+    message("Too few genes for meaningful KEGG pathway analysis")
+    return(NULL)
+  }
+  
+  # Run KEGG pathway enrichment analysis
+  kegg_result <- tryCatch({
+    enrichKEGG(gene = gene_list,
+               organism = kegg_organism,
+               keyType = "ncbi-geneid",
+               pvalueCutoff = pvalue_cutoff,
+               pAdjustMethod = "BH",
+               qvalueCutoff = qvalue_cutoff)
+  }, error = function(e) {
+    message("Error in KEGG pathway analysis: ", conditionMessage(e))
+    return(NULL)
+  })
+  
+  # Try to convert gene IDs to symbols for readability
+  if (!is.null(kegg_result) && nrow(kegg_result) > 0) {
+    tryCatch({
+      kegg_result <- setReadable(kegg_result,
+                                 OrgDb = switch(kegg_organism,
+                                                "mmu" = org.Mm.eg.db,
+                                                "hsa" = org.Hs.eg.db))
+    }, error = function(e) {
+      message("Warning: Could not convert gene IDs to symbols in KEGG results: ", conditionMessage(e))
+    })
+  }
+  
+  return(kegg_result)
+}
+
+# Function to visualize enrichment results (works for both GO and KEGG)
+visualize_enrichment_results <- function(result, title,
+                                         n_terms = 20,
+                                         save_path = NULL,
+                                         width = 10,
+                                         height = 8) {
+  if (is.null(result) || nrow(result) == 0) {
+    message("No significant terms found.")
+    return(NULL)
+  }
+  
+  # Dotplot
+  p1 <- dotplot(result, showCategory = min(n_terms, nrow(result)),
+                title = paste0(title, " - Dotplot"))
+  print(p1)
+  
+  # Barplot
+  p2 <- barplot(result, showCategory = min(n_terms, nrow(result)),
+                title = paste0(title, " - Barplot"))
+  print(p2)
+  
+  # Try to create the Gene-Concept network with limited categories
+  tryCatch({
+    # Limit the number of categories to reduce memory usage
+    p3 <- cnetplot(result,
+                   categorySize = "pvalue",
+                   showCategory = min(5, nrow(result)),
+                   node_label = "category")
+    print(p3)
+  }, error = function(e) {
+    message("Skipping cnetplot due to memory constraints: ", e$message)
+    
+    # For emapplot, we need to first calculate term similarity
+    tryCatch({
+      # Calculate term similarity for emapplot
+      result_sim <- pairwise_termsim(result)
+      
+      # Now create emapplot with similarity information
+      p3_alt <- emapplot(result_sim, showCategory = min(10, nrow(result)))
+      print(p3_alt)
+    }, error = function(e2) {
+      message("Skipping emapplot due to error: ", e2$message)
+      # As a fallback, just use a simple heatplot which is less memory intensive
+      p3_alt2 <- heatplot(result, showCategory = min(15, nrow(result)))
+      print(p3_alt2)
+    })
+  })
+  
+  # Save plots if a path is provided
+  if (!is.null(save_path)) {
+    pdf(save_path, width = width, height = height)
+    print(p1)
+    print(p2)
+    
+    # Try to create and save the Gene-Concept network with memory handling
+    tryCatch({
+      p3 <- cnetplot(result,
+                     categorySize = "pvalue",
+                     showCategory = min(5, nrow(result)),
+                     node_label = "category")
+      print(p3)
+    }, error = function(e) {
+      message("Skipping cnetplot in PDF due to memory constraints")
+      
+      # For emapplot, also need term similarity
+      tryCatch({
+        result_sim <- pairwise_termsim(result)
+        p3_alt <- emapplot(result_sim, showCategory = min(10, nrow(result)))
+        print(p3_alt)
+      }, error = function(e2) {
+        message("Skipping emapplot in PDF due to error: ", e2$message)
+        p3_alt2 <- heatplot(result, showCategory = min(15, nrow(result)))
+        print(p3_alt2)
+      })
+    })
+    
+    dev.off()
+  }
+}
+
+# Enhanced neurodevelopment and cognitive function related terms
+neuro_cognitive_terms <- c(
+  # Original terms
+  "neuron", "neural", "brain", "development", "neurodevelopment", 
+  "cognition", "cognitive", "neurogenesis", "synapse", "axon", 
+  "dendrite", "synaptic", "neuronal", "learning", "memory",
+  "neurotransmitter", "neuro", "cerebral", "hippocamp", "cortex",
+  "myelin", "oligodendrocyte", "glia", "astrocyte",
+  
+  # Enhanced terms for Down syndrome and intellectual disability
+  "Down syndrome", "intellectual disability", "developmental delay",
+  "cognitive impairment", "mental retardation", "trisomy",
+  
+  # Additional neurodevelopmental terms
+  "differentiation", "gliogenesis", "myelination", "neuroplasticity",
+  "brain development", "nervous system development", "CNS development",
+  "neural tube", "neural crest", "neural migration", "neural proliferation",
+  
+  # Molecular and cellular terms
+  "chromatin", "histone", "transcription", "gene expression",
+  "epigenetic", "DNA methylation", "chromatin remodeling",
+  "transcriptional regulation", "gene regulation",
+  
+  # Cognitive and behavioral terms
+  "attention", "executive function", "working memory", "spatial memory",
+  "episodic memory", "semantic memory", "procedural learning",
+  "motor learning", "social cognition", "language development",
+  
+  # Synaptic and cellular signaling
+  "synaptic plasticity", "long-term potentiation", "long-term depression",
+  "NMDA", "AMPA", "GABA", "dopamine", "serotonin", "acetylcholine",
+  "calcium signaling", "cAMP", "protein kinase", "phosphorylation",
+  
+  # Additional brain regions and structures
+  "hippocampus", "prefrontal", "temporal", "parietal", "frontal",
+  "cerebellum", "brainstem", "thalamus", "hypothalamus", "amygdala",
+  
+  # Disease-related terms
+  "Alzheimer", "autism", "ADHD", "epilepsy", "seizure",
+  "neurodegeneration", "neuroprotection", "neuroinflammation"
+)
+
+# Enhanced KEGG-specific terms (for filtering KEGG pathways)
+kegg_neuro_terms <- c(
+  # Original KEGG terms
+  "Neuron", "Neural", "Brain", "Neurotrophin", "Synapse", "Synaptic",
+  "Axon", "Neurogenesis", "Neurotransmitter", "Alzheimer", "Parkinson",
+  "Huntington", "Long-term potentiation", "Long-term depression",
+  "Dopaminergic", "Serotonergic", "Glutamatergic", "GABAergic",
+  "Cholinergic", "Nervous", "Circadian", "Cognit", "Memory",
+  
+  # Enhanced KEGG terms
+  "Intellectual disability", "Autism", "ADHD", "Epilepsy",
+  "Neural development", "Brain development", "Cognitive",
+  "Learning", "Attention", "Executive", "Chromatin",
+  "Histone", "Transcription", "Gene expression", "Epigenetic",
+  "DNA methylation", "Chromatin remodeling", "Cell cycle",
+  "Apoptosis", "Calcium", "cAMP", "MAPK", "PI3K", "Wnt",
+  "Hedgehog", "Notch", "TGF", "BMP", "FGF", "VEGF",
+  "Neurotrophin signaling", "Axon guidance", "Gap junction",
+  "Tight junction", "Adherens junction", "Focal adhesion"
+)
+
+# Enhanced filter function for neurodevelopment and cognitive function terms
+filter_neuro_terms <- function(result, is_kegg = FALSE) {
+  if (is.null(result) || !is(result, "enrichResult") || nrow(result) == 0) {
+    return(NULL)
+  }
+  
+  # Convert to data frame first to work with safer subsetting
+  result_df <- tryCatch({
+    as.data.frame(result)
+  }, error = function(e) {
+    message("Error converting result to data frame: ", conditionMessage(e))
+    return(NULL)
+  })
+  
+  if (is.null(result_df) || nrow(result_df) == 0) {
+    return(NULL)
+  }
+  
+  # Choose appropriate terms based on result type
+  terms <- if (is_kegg) {
+    kegg_neuro_terms
+  } else {
+    neuro_cognitive_terms
+  }
+  
+  # Create pattern for filtering - escape special regex characters
+  escaped_terms <- sapply(terms, function(x) {
+    # Escape special regex characters but keep word boundaries
+    gsub("([\\[\\]\\(\\)\\{\\}\\+\\*\\?\\^\\$\\|\\\\\\.])", "\\\\\\1", x)
+  })
+  
+  # Create pattern with word boundaries to avoid partial matches
+  pattern <- paste0("\\b(", paste(escaped_terms, collapse = "|"), ")\\b")
+  
+  # Find matching indices using both Description and ID columns
+  desc_matches <- grep(pattern, result_df$Description, ignore.case = TRUE)
+  id_matches <- if("ID" %in% colnames(result_df)) {
+    grep(pattern, result_df$ID, ignore.case = TRUE)
+  } else {
+    integer(0)
+  }
+  
+  # Combine matches and remove duplicates
+  matches <- unique(c(desc_matches, id_matches))
+  
+  if (length(matches) == 0) {
+    return(NULL)
+  }
+  
+  # Create a new enrichResult object with the filtered terms
+  neuro_df <- result_df[matches, ]
+  
+  # Convert back to an enrichResult-like object
+  neuro_terms <- result
+  neuro_terms@result <- neuro_df
+  
+  return(neuro_terms)
+}
+
+# Function to categorize neurodevelopmental terms into functional groups
+categorize_neuro_term <- function(description) {
+  desc_lower <- tolower(description)
+  
+  # Define category patterns
+  if (grepl("down syndrome|trisomy|intellectual disability|developmental delay", desc_lower)) {
+    return("Down Syndrome & Intellectual Disability")
+  } else if (grepl("learning|memory|cognition|cognitive|attention|executive", desc_lower)) {
+    return("Learning & Memory")
+  } else if (grepl("synapse|synaptic|neurotransmitter|plasticity|potentiation|depression", desc_lower)) {
+    return("Synaptic Function")
+  } else if (grepl("neurogenesis|neural development|brain development|differentiation|migration", desc_lower)) {
+    return("Neural Development")
+  } else if (grepl("chromatin|histone|transcription|gene expression|epigenetic|methylation", desc_lower)) {
+    return("Gene Regulation & Epigenetics")
+  } else if (grepl("neuron|neural|axon|dendrite|glia|oligodendrocyte|astrocyte", desc_lower)) {
+    return("Neural Structure & Function")
+  } else if (grepl("signaling|pathway|kinase|phosphorylation|calcium|camp", desc_lower)) {
+    return("Cellular Signaling")
+  } else {
+    return("Other Neurodevelopmental")
+  }
+}
+
+# Function to extract comparison information from source_file - FOR CELL TYPES
+extract_comparison_info <- function(source_file) {
+  # Extract the pattern like "astrocyte_t1vst3" from source strings like "astrocyte_t1vst3_Motif_FDR-0-1_2025-06-09"
+  matches <- regexpr("[a-zA-Z_]+_t\\d+vst\\d+", source_file)
+  if (matches > 0) {
+    return(substr(source_file, matches, matches + attr(matches, "match.length") - 1))
+  } else {
+    # Fallback if pattern doesn't match
+    return(sub("_Motif_.*$", "", source_file))
+  }
+}
+
+# Main analysis function to process the combined motif data file - FOR CELL TYPES
+analyze_combined_motifs <- function(file_path = "combined_motif_data.csv", fdr_threshold = 0.1) {
+  # Read the combined motif data
+  cat("Reading combined motif data file...\n")
+  motif_data <- tryCatch({
+    read_csv(file_path)
+  }, error = function(e) {
+    stop("Error reading file: ", conditionMessage(e))
+  })
+  
+  # Check if the data has the expected columns
+  required_cols <- c("group", "name", "FDR", "source_file")
+  missing_cols <- setdiff(required_cols, colnames(motif_data))
+  
+  if (length(missing_cols) > 0) {
+    stop("Missing required columns in data file: ", paste(missing_cols, collapse = ", "))
+  }
+  
+  # Add TF column by extracting TF name from the 'name' column
+  motif_data$TF <- sapply(motif_data$name, extract_tf_name)
+  
+  # Extract comparison info from source_file column
+  motif_data$comparison <- sapply(motif_data$source_file, extract_comparison_info)
+  
+  # Extract cell type from comparison (everything before the first "_t")
+  motif_data$cell_type <- sub("_t\\d+vst\\d+.*$", "", motif_data$comparison)
+  
+  # Get unique comparisons
+  comparisons <- unique(motif_data$comparison)
+  cat("Found comparisons:", paste(comparisons, collapse = ", "), "\n\n")
+  
+  # Get unique cell types
+  cell_types <- unique(motif_data$cell_type)
+  cat("Found cell types:", paste(cell_types, collapse = ", "), "\n\n")
+  
+  # Container for results
+  all_results <- list()
+  
+  # Process each comparison separately
+  for (comp in comparisons) {
+    cat("\nProcessing comparison:", comp, "\n")
+    
+    # Extract cell type and treatment comparison from comp
+    cell_type <- sub("_t\\d+vst\\d+.*$", "", comp)
+    treatment_comp <- sub("^[^_]+_", "", comp)
+    
+    cat("Cell type:", cell_type, "| Treatment comparison:", treatment_comp, "\n")
+    
+    # Filter data for this comparison
+    comp_data <- motif_data %>% filter(comparison == !!comp)
+    
+    # Group by treatment within this comparison
+    treatment_groups <- unique(comp_data$group)
+    
+    # Process each treatment group within this comparison
+    for (group in treatment_groups) {
+      comp_group <- paste0(comp, "_", group)
+      cat("\nProcessing treatment group:", group, "in comparison:", comp, "\n")
+      
+      # Filter data for this treatment group
+      group_data <- comp_data %>% filter(group == !!group)
+      
+      # Get significant TFs based on FDR threshold
+      significant_tfs <- group_data %>%
+        filter(FDR <= fdr_threshold) %>%
+        pull(TF) %>%
+        unique()
+      
+      cat("  Found", length(significant_tfs), "significant TFs with FDR ≤", fdr_threshold, "\n")
+      
+      if (length(significant_tfs) < 3) {
+        cat("  Too few significant TFs for analysis, skipping\n")
+        next
+      }
+      
+      # Map to Entrez IDs
+      entrez_ids <- map_to_entrez(significant_tfs)
+      
+      if (length(entrez_ids) < 3) {
+        cat("  Too few genes with Entrez IDs for analysis, skipping\n")
+        next
+      }
+      
+      cat("  Mapped", length(entrez_ids), "TFs to Entrez IDs\n")
+      
+      # Perform GO analysis
+      cat("  Running GO enrichment analysis...\n")
+      go_bp <- run_go_analysis(entrez_ids, ont = "BP")
+      
+      # Perform KEGG analysis
+      cat("  Running KEGG pathway analysis...\n")
+      kegg_pathway <- run_kegg_analysis(entrez_ids)
+      
+      # Filter for neurodevelopmental terms
+      neuro_bp <- filter_neuro_terms(go_bp, is_kegg = FALSE)
+      neuro_kegg <- filter_neuro_terms(kegg_pathway, is_kegg = TRUE)
+      
+      # Create output filenames with cell type and comparison info
+      filename_prefix <- paste0(comp, "_", group)
+      
+      # Visualize and save results
+      if (!is.null(go_bp) && nrow(go_bp) > 0) {
+        cat("  Visualizing GO results...\n")
+        visualize_enrichment_results(
+          go_bp,
+          paste0(cell_type, " - ", treatment_comp, " - ", group, " - GO Biological Process"),
+          save_path = paste0(filename_prefix, "_GO_BP_results.pdf")
+        )
+        write.csv(go_bp, paste0(filename_prefix, "_GO_BP_results.csv"))
+      } else {
+        cat("  No significant GO terms found for", comp_group, "\n")
+      }
+      
+      if (!is.null(kegg_pathway) && nrow(kegg_pathway) > 0) {
+        cat("  Visualizing KEGG results...\n")
+        visualize_enrichment_results(
+          kegg_pathway,
+          paste0(cell_type, " - ", treatment_comp, " - ", group, " - KEGG Pathways"),
+          save_path = paste0(filename_prefix, "_KEGG_results.pdf")
+        )
+        write.csv(kegg_pathway, paste0(filename_prefix, "_KEGG_results.csv"))
+      } else {
+        cat("  No significant KEGG pathways found for", comp_group, "\n")
+      }
+      
+      # Save neurodevelopmental results
+      if (!is.null(neuro_bp) && nrow(neuro_bp) > 0) {
+        cat("  Found", nrow(neuro_bp), "neurodevelopment-related GO terms\n")
+        visualize_enrichment_results(
+          neuro_bp,
+          paste0(cell_type, " - ", treatment_comp, " - ", group, " - Neurodevelopmental GO Terms"),
+          save_path = paste0(filename_prefix, "_NeuroGO_results.pdf")
+        )
+        write.csv(neuro_bp, paste0(filename_prefix, "_NeuroGO_results.csv"))
+      }
+      
+      if (!is.null(neuro_kegg) && nrow(neuro_kegg) > 0) {
+        cat("  Found", nrow(neuro_kegg), "neurodevelopment-related KEGG pathways\n")
+        visualize_enrichment_results(
+          neuro_kegg,
+          paste0(cell_type, " - ", treatment_comp, " - ", group, " - Neurodevelopmental KEGG Pathways"),
+          save_path = paste0(filename_prefix, "_NeuroKEGG_results.pdf")
+        )
+        write.csv(neuro_kegg, paste0(filename_prefix, "_NeuroKEGG_results.csv"))
+      }
+      
+      # Store results using comparison_group as key
+      all_results[[comp_group]] <- list(
+        comparison = comp,
+        cell_type = cell_type,
+        treatment_comparison = treatment_comp,
+        treatment = group,
+        significant_tfs = significant_tfs,
+        entrez_ids = entrez_ids,
+        go_bp = go_bp,
+        kegg_pathway = kegg_pathway,
+        neuro_bp = neuro_bp,
+        neuro_kegg = neuro_kegg
+      )
+    }
+  }
+  
+  # Create comparison visualizations
+  cat("\nCreating comparison visualizations...\n")
+  
+  # Group results by cell type for comparison visualizations
+  cell_types_list <- unique(sapply(names(all_results), function(name) {
+    all_results[[name]]$cell_type
+  }))
+  
+  # Process each cell type separately
+  for (cell_type in cell_types_list) {
+    cat("\nCreating visualizations for cell type:", cell_type, "\n")
+    
+    # Filter results for this cell type
+    celltype_results <- list()
+    for (name in names(all_results)) {
+      if (all_results[[name]]$cell_type == cell_type) {
+        celltype_results[[name]] <- all_results[[name]]
+      }
+    }
+    
+    if (length(celltype_results) > 1) {
+      # Compare GO terms across treatment comparisons within this cell type
+      compare_terms_across_treatments(celltype_results, "go_bp", paste0(cell_type, " - GO Biological Process"))
+      
+      # Compare KEGG pathways across treatment comparisons within this cell type
+      compare_terms_across_treatments(celltype_results, "kegg_pathway", paste0(cell_type, " - KEGG Pathways"))
+      
+      # Compare neurodevelopment GO terms within this cell type
+      compare_terms_across_treatments(celltype_results, "neuro_bp", paste0(cell_type, " - Neurodevelopmental GO Terms"))
+      
+      # Compare neurodevelopment KEGG pathways within this cell type
+      compare_terms_across_treatments(celltype_results, "neuro_kegg", paste0(cell_type, " - Neurodevelopmental KEGG Pathways"))
+      
+      # Compare TFs across treatment comparisons within this cell type
+      compare_tfs_across_treatments(celltype_results, paste0(cell_type, "_"))
+    } else {
+      cat("  Not enough treatment comparisons in cell type", cell_type, "for comparison visualizations\n")
+    }
+  }
+  
+  # Generate all summary files
+  create_summary_files(all_results)
+  
+  # Create enhanced neurodevelopmental summaries with functional categories
+  create_enhanced_neuro_summary(all_results)
+  
+  # Create enhanced visualizations
+  create_enhanced_neuro_visualizations(all_results)
+  
+  cat("\nAnalysis complete. Results saved to CSV files and PDF visualizations.\n")
+  
+  return(all_results)
+}
+
+# Function to compare enrichment terms across treatments - FOR CELL TYPES
+compare_terms_across_treatments <- function(all_results, result_type, title) {
+  # Extract results of the specified type from all treatments
+  terms_list <- list()
+  
+  for (result_name in names(all_results)) {
+    result <- all_results[[result_name]][[result_type]]
+    
+    if (!is.null(result) && is(result, "enrichResult") && nrow(result) > 0) {
+      # Convert to data frame
+      tryCatch({
+        result_df <- as.data.frame(result)
+        
+        if (nrow(result_df) > 0) {
+          # Create data frame with treatment info
+          term_df <- data.frame(
+            treatment = all_results[[result_name]]$treatment,
+            comparison = all_results[[result_name]]$comparison,
+            cell_type = all_results[[result_name]]$cell_type,
+            treatment_comparison = all_results[[result_name]]$treatment_comparison,
+            result_name = result_name,
+            ID = result_df$ID,
+            Description = result_df$Description,
+            pvalue = result_df$pvalue,
+            qvalue = result_df$qvalue,
+            GeneRatio = result_df$GeneRatio,
+            Count = result_df$Count,
+            stringsAsFactors = FALSE
+          )
+          
+          terms_list[[result_name]] <- term_df
+        }
+      }, error = function(e) {
+        message("Error processing ", title, " for ", result_name, ": ", conditionMessage(e))
+      })
+    }
+  }
+  
+  # If we have results to compare
+  if (length(terms_list) > 0) {
+    # Combine all results
+    all_terms <- do.call(rbind, terms_list)
+    
+    # Get unique cell type info for filename
+    cell_type_info <- unique(all_terms$cell_type)[1]
+    safe_title <- gsub("[^a-zA-Z0-9]", "_", title)
+    
+    # Create a wide format for comparison across treatments
+    terms_wide <- all_terms %>%
+      dplyr::select(treatment_comparison, treatment, Description, pvalue) %>%
+      mutate(neg_log10_pvalue = -log10(pvalue),
+             treatment_label = paste0(treatment_comparison, "_", treatment)) %>%
+      pivot_wider(id_cols = Description,
+                  names_from = treatment_label,
+                  values_from = neg_log10_pvalue,
+                  values_fill = 0)
+    
+    # Select top terms based on average significance
+    top_terms <- terms_wide %>%
+      mutate(avg_sig = rowMeans(dplyr::select(., -Description), na.rm = TRUE)) %>%
+      arrange(desc(avg_sig)) %>%
+      head(40)
+    
+    # Prepare data for heatmap
+    term_data <- top_terms %>%
+      pivot_longer(cols = -c(Description, avg_sig),
+                   names_to = "treatment_label",
+                   values_to = "neg_log10_pvalue")
+    
+    # Create heatmap
+    comparison_plot <- ggplot(term_data,
+                              aes(x = treatment_label,
+                                  y = reorder(Description, avg_sig),
+                                  fill = neg_log10_pvalue)) +
+      geom_tile() +
+      scale_fill_viridis(option = "viridis", begin = 0.1, end = 0.9,
+                         name = "-log10(p-value)") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 10),
+            axis.text.y = element_text(size = 9)) +
+      labs(title = title,
+           x = "Treatment Comparison",
+           y = "Term")
+    
+    # Save plot and data with cell type info in filename
+    plot_filename <- paste0(safe_title, ".pdf")
+    data_filename <- paste0(safe_title, ".csv")
+    
+    ggsave(plot_filename, comparison_plot, width = 12, height = 10)
+    write.csv(top_terms, data_filename)
+    
+    # Display plot
+    print(comparison_plot)
+    
+    return(list(comparison_plot = comparison_plot, top_terms = top_terms))
+  } else {
+    message("No ", title, " found for comparison")
+    return(NULL)
+  }
+}
+
+# Compare TFs across treatments - FOR CELL TYPES
+compare_tfs_across_treatments <- function(all_results, prefix = "") {
+  # Get all significant TFs for each treatment
+  treatment_tfs <- list()
+  treatment_labels <- list()
+  
+  for (result_name in names(all_results)) {
+    treatment_tfs[[result_name]] <- all_results[[result_name]]$significant_tfs
+    treatment_labels[[result_name]] <- paste0(all_results[[result_name]]$treatment_comparison, "_", all_results[[result_name]]$treatment)
+  }
+  
+  # Get cell type info from first result
+  cell_type_info <- all_results[[names(all_results)[1]]]$cell_type
+  
+  # Print TF counts
+  cat("\n======= TF COMPARISON FOR CELL TYPE:", cell_type_info, "=======\n")
+  for (result_name in names(treatment_tfs)) {
+    treatment <- treatment_labels[[result_name]]
+    cat("\nTreatment:", treatment, "- Number of significant TFs:", length(treatment_tfs[[result_name]]), "\n")
+  }
+  
+  # Find shared TFs between all treatments
+  if (length(treatment_tfs) >= 2) {
+    shared_tfs <- Reduce(intersect, treatment_tfs)
+    cat("\nShared TFs across all treatments in", cell_type_info, ":", length(shared_tfs), "\n")
+    if (length(shared_tfs) > 0) {
+      cat("  ", paste(shared_tfs, collapse = ", "), "\n")
+    }
+    
+    # Find unique TFs for each treatment
+    unique_tfs_list <- list()
+    for (result_name in names(treatment_tfs)) {
+      treatment <- treatment_labels[[result_name]]
+      other_results <- setdiff(names(treatment_tfs), result_name)
+      other_tfs <- unique(unlist(treatment_tfs[other_results]))
+      unique_tfs <- setdiff(treatment_tfs[[result_name]], other_tfs)
+      
+      unique_tfs_list[[result_name]] <- unique_tfs
+      
+      cat("\nUnique TFs in", treatment, ":", length(unique_tfs), "\n")
+      if (length(unique_tfs) > 0 && length(unique_tfs) <= 20) {
+        cat("  ", paste(unique_tfs, collapse = ", "), "\n")
+      } else if (length(unique_tfs) > 20) {
+        cat("  ", paste(unique_tfs[1:20], collapse = ", "), "... (and", length(unique_tfs) - 20, "more)\n")
+      }
+    }
+    
+    # Export shared and unique TFs with cell type info in filename
+    write.csv(data.frame(Shared_TFs = shared_tfs),
+              paste0(prefix, "Shared_TFs_", cell_type_info, ".csv"))
+    
+    for (result_name in names(unique_tfs_list)) {
+      treatment <- treatment_labels[[result_name]]
+      clean_treatment <- gsub("[^A-Za-z0-9]", "_", treatment)
+      write.csv(data.frame(Unique_TFs = unique_tfs_list[[result_name]]),
+                paste0(prefix, "Unique_TFs_", cell_type_info, "_", clean_treatment, ".csv"))
+    }
+    
+    # Create TF overlap visualization using UpSetR if available
+    tryCatch({
+      if (requireNamespace("UpSetR", quietly = TRUE)) {
+        # Create TF presence matrix
+        all_tfs <- unique(unlist(treatment_tfs))
+        tf_matrix <- matrix(0, nrow = length(all_tfs), ncol = length(treatment_tfs))
+        rownames(tf_matrix) <- all_tfs
+        colnames(tf_matrix) <- sapply(names(treatment_tfs), function(n) treatment_labels[[n]])
+        
+        for (i in 1:length(treatment_tfs)) {
+          result_name <- names(treatment_tfs)[i]
+          tfs <- treatment_tfs[[result_name]]
+          tf_matrix[tfs, i] <- 1
+        }
+        
+        # Convert to data frame for UpSetR
+        tf_df <- as.data.frame(tf_matrix)
+        
+        # Create UpSet plot with cell type info in filename
+        upset_plot <- UpSetR::upset(tf_df, nsets = length(treatment_tfs), order.by = "freq")
+        pdf(paste0(prefix, "TF_Overlap_", cell_type_info, "_UpSet.pdf"), width = 10, height = 8)
+        print(upset_plot)
+        dev.off()
+      } else {
+        message("UpSetR package not available. Install it with 'install.packages(\"UpSetR\")' for more detailed overlap visualization.")
+      }
+    }, error = function(e) {
+      message("Error creating UpSet plot: ", conditionMessage(e))
+    })
+    
+    return(list(shared_tfs = shared_tfs, unique_tfs = unique_tfs_list))
+  }
+}
+
+# Create a comprehensive summary of all results - FOR CELL TYPES
+create_summary_files <- function(all_results) {
+  cat("\nGenerating summary files for all analyses...\n")
+  
+  # Create GO term summary
+  create_go_summary(all_results)
+  
+  # Create KEGG pathway summary
+  create_kegg_summary(all_results)
+  
+  # Create TF usage summary
+  create_tf_summary(all_results)
+  
+  # Create neurodevelopmental terms summary
+  create_neuro_summary(all_results)
+  
+  cat("Summary files generation complete.\n")
+}
+
+# Create a summary of GO terms across all cell types and comparisons
+create_go_summary <- function(all_results) {
+  cat("Creating GO term summary across all cell types and treatment comparisons...\n")
+  
+  # Collect all GO results
+  go_results_list <- list()
+  
+  for (result_name in names(all_results)) {
+    result <- all_results[[result_name]]
+    go_bp <- result$go_bp
+    
+    if (!is.null(go_bp) && is(go_bp, "enrichResult") && nrow(go_bp) > 0) {
+      # Convert to data frame
+      tryCatch({
+        go_df <- as.data.frame(go_bp)
+        
+        if (nrow(go_df) > 0) {
+          # Add metadata columns
+          go_df$comparison <- result$comparison
+          go_df$treatment <- result$treatment
+          go_df$cell_type <- result$cell_type
+          go_df$treatment_comparison <- result$treatment_comparison
+          go_df$result_name <- result_name
+          
+          # Add to list
+          go_results_list[[result_name]] <- go_df
+        }
+      }, error = function(e) {
+        message("Error processing GO results for ", result_name, ": ", conditionMessage(e))
+      })
+    }
+  }
+  
+  # If we have any results
+  if (length(go_results_list) > 0) {
+    # Combine all GO results
+    all_go_results <- do.call(rbind, go_results_list)
+    
+    # Write complete GO results summary
+    write.csv(all_go_results, "Summary_All_GO_Results_CellTypes.csv", row.names = FALSE)
+    
+    # Create a pivot table of top GO terms by frequency of occurrence
+    go_term_counts <- all_go_results %>%
+      group_by(Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(desc(count), avg_pvalue)
+    
+    # Write GO term frequency summary
+    write.csv(go_term_counts, "Summary_GO_Term_Frequency_CellTypes.csv", row.names = FALSE)
+    
+    # Create cell type-specific summaries
+    go_by_celltype <- all_go_results %>%
+      group_by(cell_type, Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(cell_type, desc(count), avg_pvalue)
+    
+    write.csv(go_by_celltype, "Summary_GO_by_CellType.csv", row.names = FALSE)
+    
+    # Create treatment-specific summaries
+    go_by_treatment <- all_go_results %>%
+      group_by(treatment, Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(treatment, desc(count), avg_pvalue)
+    
+    write.csv(go_by_treatment, "Summary_GO_by_Treatment_CellTypes.csv", row.names = FALSE)
+    
+    # Return the data
+    return(list(
+      all_go_results = all_go_results,
+      go_term_counts = go_term_counts,
+      go_by_celltype = go_by_celltype,
+      go_by_treatment = go_by_treatment
+    ))
+  } else {
+    message("No GO results found for summary")
+    return(NULL)
+  }
+}
+
+# Create a summary of KEGG pathways across all cell types and comparisons
+create_kegg_summary <- function(all_results) {
+  cat("Creating KEGG pathway summary across all cell types and treatment comparisons...\n")
+  
+  # Collect all KEGG results
+  kegg_results_list <- list()
+  
+  for (result_name in names(all_results)) {
+    result <- all_results[[result_name]]
+    kegg_pathway <- result$kegg_pathway
+    
+    if (!is.null(kegg_pathway) && is(kegg_pathway, "enrichResult") && nrow(kegg_pathway) > 0) {
+      # Convert to data frame
+      tryCatch({
+        kegg_df <- as.data.frame(kegg_pathway)
+        
+        if (nrow(kegg_df) > 0) {
+          # Add metadata columns
+          kegg_df$comparison <- result$comparison
+          kegg_df$treatment <- result$treatment
+          kegg_df$cell_type <- result$cell_type
+          kegg_df$treatment_comparison <- result$treatment_comparison
+          kegg_df$result_name <- result_name
+          
+          # Add to list
+          kegg_results_list[[result_name]] <- kegg_df
+        }
+      }, error = function(e) {
+        message("Error processing KEGG results for ", result_name, ": ", conditionMessage(e))
+      })
+    }
+  }
+  
+  # If we have any results
+  if (length(kegg_results_list) > 0) {
+    # Combine all KEGG results
+    all_kegg_results <- do.call(rbind, kegg_results_list)
+    
+    # Write complete KEGG results summary
+    write.csv(all_kegg_results, "Summary_All_KEGG_Results_CellTypes.csv", row.names = FALSE)
+    
+    # Create a pivot table of top KEGG pathways by frequency of occurrence
+    kegg_pathway_counts <- all_kegg_results %>%
+      group_by(Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(desc(count), avg_pvalue)
+    
+    # Write KEGG pathway frequency summary
+    write.csv(kegg_pathway_counts, "Summary_KEGG_Pathway_Frequency_CellTypes.csv", row.names = FALSE)
+    
+    # Create cell type-specific summaries
+    kegg_by_celltype <- all_kegg_results %>%
+      group_by(cell_type, Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(cell_type, desc(count), avg_pvalue)
+    
+    write.csv(kegg_by_celltype, "Summary_KEGG_by_CellType.csv", row.names = FALSE)
+    
+    # Create treatment-specific summaries
+    kegg_by_treatment <- all_kegg_results %>%
+      group_by(treatment, Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(treatment, desc(count), avg_pvalue)
+    
+    write.csv(kegg_by_treatment, "Summary_KEGG_by_Treatment_CellTypes.csv", row.names = FALSE)
+    
+    # Return the data
+    return(list(
+      all_kegg_results = all_kegg_results,
+      kegg_pathway_counts = kegg_pathway_counts,
+      kegg_by_celltype = kegg_by_celltype,
+      kegg_by_treatment = kegg_by_treatment
+    ))
+  } else {
+    message("No KEGG results found for summary")
+    return(NULL)
+  }
+}
+
+# Create a summary of TF usage across all cell types and comparisons
+create_tf_summary <- function(all_results) {
+  cat("Creating TF usage summary across all cell types and treatment comparisons...\n")
+  
+  # Collect all TFs with their metadata
+  all_tfs <- data.frame(
+    TF = character(),
+    comparison = character(),
+    treatment = character(),
+    cell_type = character(),
+    treatment_comparison = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (result_name in names(all_results)) {
+    result <- all_results[[result_name]]
+    tfs <- result$significant_tfs
+    
+    if (length(tfs) > 0) {
+      # Create a data frame for this set of TFs
+      tf_df <- data.frame(
+        TF = tfs,
+        comparison = result$comparison,
+        treatment = result$treatment,
+        cell_type = result$cell_type,
+        treatment_comparison = result$treatment_comparison,
+        result_name = result_name,
+        stringsAsFactors = FALSE
+      )
+      
+      # Add to the main data frame
+      all_tfs <- rbind(all_tfs, tf_df)
+    }
+  }
+  
+  # If we have any TFs
+  if (nrow(all_tfs) > 0) {
+    # Write complete TF results
+    write.csv(all_tfs, "Summary_All_TFs_CellTypes.csv", row.names = FALSE)
+    
+    # Create a pivot table of TF usage frequency
+    tf_counts <- all_tfs %>%
+      group_by(TF) %>%
+      summarize(
+        count = n(),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(desc(count))
+    
+    # Write TF frequency summary
+    write.csv(tf_counts, "Summary_TF_Frequency_CellTypes.csv", row.names = FALSE)
+    
+    # Create cell type-specific TF summaries
+    tf_by_celltype <- all_tfs %>%
+      group_by(cell_type, TF) %>%
+      summarize(
+        count = n(),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(cell_type, desc(count))
+    
+    write.csv(tf_by_celltype, "Summary_TF_by_CellType.csv", row.names = FALSE)
+    
+    # Create treatment-specific TF summaries
+    tf_by_treatment <- all_tfs %>%
+      group_by(treatment, TF) %>%
+      summarize(
+        count = n(),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(treatment, desc(count))
+    
+    write.csv(tf_by_treatment, "Summary_TF_by_Treatment_CellTypes.csv", row.names = FALSE)
+    
+    # Return the data
+    return(list(
+      all_tfs = all_tfs,
+      tf_counts = tf_counts,
+      tf_by_celltype = tf_by_celltype,
+      tf_by_treatment = tf_by_treatment
+    ))
+  } else {
+    message("No TF results found for summary")
+    return(NULL)
+  }
+}
+
+# Create a summary of neurodevelopmental terms across all cell types
+create_neuro_summary <- function(all_results) {
+  cat("Creating neurodevelopmental term summary across all cell types and treatment comparisons...\n")
+  
+  # Collect all neuro GO results
+  neuro_go_list <- list()
+  
+  # Collect all neuro KEGG results
+  neuro_kegg_list <- list()
+  
+  for (result_name in names(all_results)) {
+    result <- all_results[[result_name]]
+    
+    # Process neuro GO results
+    neuro_bp <- result$neuro_bp
+    if (!is.null(neuro_bp) && is(neuro_bp, "enrichResult") && nrow(neuro_bp) > 0) {
+      tryCatch({
+        neuro_go_df <- as.data.frame(neuro_bp)
+        
+        if (nrow(neuro_go_df) > 0) {
+          # Add metadata columns
+          neuro_go_df$comparison <- result$comparison
+          neuro_go_df$treatment <- result$treatment
+          neuro_go_df$cell_type <- result$cell_type
+          neuro_go_df$treatment_comparison <- result$treatment_comparison
+          neuro_go_df$result_name <- result_name
+          neuro_go_df$type <- "GO"
+          
+          # Add to list
+          neuro_go_list[[result_name]] <- neuro_go_df
+        }
+      }, error = function(e) {
+        message("Error processing neuro GO results for ", result_name, ": ", conditionMessage(e))
+      })
+    }
+    
+    # Process neuro KEGG results
+    neuro_kegg <- result$neuro_kegg
+    if (!is.null(neuro_kegg) && is(neuro_kegg, "enrichResult") && nrow(neuro_kegg) > 0) {
+      tryCatch({
+        neuro_kegg_df <- as.data.frame(neuro_kegg)
+        
+        if (nrow(neuro_kegg_df) > 0) {
+          # Add metadata columns
+          neuro_kegg_df$comparison <- result$comparison
+          neuro_kegg_df$treatment <- result$treatment
+          neuro_kegg_df$cell_type <- result$cell_type
+          neuro_kegg_df$treatment_comparison <- result$treatment_comparison
+          neuro_kegg_df$result_name <- result_name
+          neuro_kegg_df$type <- "KEGG"
+          
+          # Add to list
+          neuro_kegg_list[[result_name]] <- neuro_kegg_df
+        }
+      }, error = function(e) {
+        message("Error processing neuro KEGG results for ", result_name, ": ", conditionMessage(e))
+      })
+    }
+  }
+  
+  # If we have any results
+  has_results <- FALSE
+  
+  # Process GO neuro terms
+  if (length(neuro_go_list) > 0) {
+    has_results <- TRUE
+    
+    # Combine all neuro GO results
+    all_neuro_go <- do.call(rbind, neuro_go_list)
+    
+    # Write complete neuro GO results summary
+    write.csv(all_neuro_go, "Summary_All_Neuro_GO_Results_CellTypes.csv", row.names = FALSE)
+    
+    # Create a pivot table of top neuro GO terms by frequency
+    neuro_go_counts <- all_neuro_go %>%
+      group_by(Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(desc(count), avg_pvalue)
+    
+    # Write neuro GO term frequency summary
+    write.csv(neuro_go_counts, "Summary_Neuro_GO_Frequency_CellTypes.csv", row.names = FALSE)
+  }
+  
+  # Process KEGG neuro pathways
+  if (length(neuro_kegg_list) > 0) {
+    has_results <- TRUE
+    
+    # Combine all neuro KEGG results
+    all_neuro_kegg <- do.call(rbind, neuro_kegg_list)
+    
+    # Write complete neuro KEGG results summary
+    write.csv(all_neuro_kegg, "Summary_All_Neuro_KEGG_Results_CellTypes.csv", row.names = FALSE)
+    
+    # Create a pivot table of top neuro KEGG pathways by frequency
+    neuro_kegg_counts <- all_neuro_kegg %>%
+      group_by(Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatment_comparisons = paste(unique(treatment_comparison), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(desc(count), avg_pvalue)
+    
+    # Write neuro KEGG pathway frequency summary
+    write.csv(neuro_kegg_counts, "Summary_Neuro_KEGG_Frequency_CellTypes.csv", row.names = FALSE)
+  }
+  
+  # Combine both neuro GO and KEGG results if available
+  if (has_results) {
+    # Try to combine all neuro results (both GO and KEGG)
+    if (length(neuro_go_list) > 0 && length(neuro_kegg_list) > 0) {
+      # Make sure the column names match for binding
+      common_cols <- intersect(colnames(all_neuro_go), colnames(all_neuro_kegg))
+      all_neuro_combined <- rbind(
+        all_neuro_go[, common_cols],
+        all_neuro_kegg[, common_cols]
+      )
+      
+      # Write combined neuro results
+      write.csv(all_neuro_combined, "Summary_All_Neuro_Combined_Results_CellTypes.csv", row.names = FALSE)
+    }
+    
+    return(list(
+      all_neuro_go = if(exists("all_neuro_go")) all_neuro_go else NULL,
+      neuro_go_counts = if(exists("neuro_go_counts")) neuro_go_counts else NULL,
+      all_neuro_kegg = if(exists("all_neuro_kegg")) all_neuro_kegg else NULL,
+      neuro_kegg_counts = if(exists("neuro_kegg_counts")) neuro_kegg_counts else NULL,
+      all_neuro_combined = if(exists("all_neuro_combined")) all_neuro_combined else NULL
+    ))
+  } else {
+    message("No neurodevelopmental results found for summary")
+    return(NULL)
+  }
+}
+
+# Enhanced function to create more comprehensive neurodevelopmental summaries
+create_enhanced_neuro_summary <- function(all_results) {
+  cat("Creating enhanced neurodevelopmental and cognitive term summary for cell types...\n")
+  
+  # Collect all neuro GO results with enhanced categorization
+  neuro_go_list <- list()
+  neuro_kegg_list <- list()
+  
+  for (result_name in names(all_results)) {
+    result <- all_results[[result_name]]
+    
+    # Process neuro GO results with enhanced filtering
+    neuro_bp <- result$neuro_bp
+    if (!is.null(neuro_bp) && is(neuro_bp, "enrichResult") && nrow(neuro_bp) > 0) {
+      tryCatch({
+        neuro_go_df <- as.data.frame(neuro_bp)
+        
+        if (nrow(neuro_go_df) > 0) {
+          # Add metadata columns
+          neuro_go_df$comparison <- result$comparison
+          neuro_go_df$treatment <- result$treatment
+          neuro_go_df$cell_type <- result$cell_type
+          neuro_go_df$treatment_comparison <- result$treatment_comparison
+          neuro_go_df$result_name <- result_name
+          neuro_go_df$type <- "GO"
+          
+          # Add functional categories based on keywords
+          neuro_go_df$functional_category <- sapply(neuro_go_df$Description, categorize_neuro_term)
+          
+          neuro_go_list[[result_name]] <- neuro_go_df
+        }
+      }, error = function(e) {
+        message("Error processing enhanced neuro GO results for ", result_name, ": ", conditionMessage(e))
+      })
+    }
+    
+    # Process neuro KEGG results with enhanced filtering
+    neuro_kegg <- result$neuro_kegg
+    if (!is.null(neuro_kegg) && is(neuro_kegg, "enrichResult") && nrow(neuro_kegg) > 0) {
+      tryCatch({
+        neuro_kegg_df <- as.data.frame(neuro_kegg)
+        
+        if (nrow(neuro_kegg_df) > 0) {
+          # Add metadata columns
+          neuro_kegg_df$comparison <- result$comparison
+          neuro_kegg_df$treatment <- result$treatment
+          neuro_kegg_df$cell_type <- result$cell_type
+          neuro_kegg_df$treatment_comparison <- result$treatment_comparison
+          neuro_kegg_df$result_name <- result_name
+          neuro_kegg_df$type <- "KEGG"
+          
+          # Add functional categories
+          neuro_kegg_df$functional_category <- sapply(neuro_kegg_df$Description, categorize_neuro_term)
+          
+          neuro_kegg_list[[result_name]] <- neuro_kegg_df
+        }
+      }, error = function(e) {
+        message("Error processing enhanced neuro KEGG results for ", result_name, ": ", conditionMessage(e))
+      })
+    }
+  }
+  
+  # Process and save enhanced results
+  if (length(neuro_go_list) > 0) {
+    all_neuro_go <- do.call(rbind, neuro_go_list)
+    
+    # Save enhanced GO results with categories
+    write.csv(all_neuro_go, "Enhanced_Summary_All_Neuro_GO_Results_CellTypes.csv", row.names = FALSE)
+    
+    # Create category-specific summaries
+    neuro_go_by_category <- all_neuro_go %>%
+      group_by(functional_category, Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(functional_category, desc(count), avg_pvalue)
+    
+    write.csv(neuro_go_by_category, "Enhanced_Summary_Neuro_GO_by_Category_CellTypes.csv", row.names = FALSE)
+  }
+  
+  if (length(neuro_kegg_list) > 0) {
+    all_neuro_kegg <- do.call(rbind, neuro_kegg_list)
+    
+    # Save enhanced KEGG results with categories
+    write.csv(all_neuro_kegg, "Enhanced_Summary_All_Neuro_KEGG_Results_CellTypes.csv", row.names = FALSE)
+    
+    # Create category-specific summaries
+    neuro_kegg_by_category <- all_neuro_kegg %>%
+      group_by(functional_category, Description) %>%
+      summarize(
+        count = n(),
+        avg_pvalue = mean(pvalue),
+        min_pvalue = min(pvalue),
+        cell_types = paste(unique(cell_type), collapse = ","),
+        treatments = paste(unique(treatment), collapse = ","),
+        .groups = 'drop'
+      ) %>%
+      arrange(functional_category, desc(count), avg_pvalue)
+    
+    write.csv(neuro_kegg_by_category, "Enhanced_Summary_Neuro_KEGG_by_Category_CellTypes.csv", row.names = FALSE)
+  }
+}
+
+# Function to create enhanced visualizations with functional categories
+create_enhanced_neuro_visualizations <- function(all_results) {
+  cat("Creating enhanced neurodevelopmental visualizations for cell types...\n")
+  
+  # Create a summary plot of functional categories across cell types and treatments
+  tryCatch({
+    if (file.exists("Enhanced_Summary_All_Neuro_GO_Results_CellTypes.csv")) {
+      neuro_data <- read.csv("Enhanced_Summary_All_Neuro_GO_Results_CellTypes.csv")
+      
+      # Create a summary of categories by cell type and treatment
+      category_summary <- neuro_data %>%
+        group_by(cell_type, treatment, functional_category) %>%
+        summarize(term_count = n(), avg_pvalue = mean(pvalue), .groups = 'drop')
+      
+      # Create heatmap of categories by cell type
+      category_plot <- ggplot(category_summary,
+                              aes(x = paste0(cell_type, "_", treatment), y = functional_category,
+                                  fill = term_count, size = -log10(avg_pvalue))) +
+        geom_point(shape = 21, color = "black") +
+        scale_fill_viridis_c(name = "Term Count") +
+        scale_size_continuous(name = "-log10(p-value)", range = c(2, 10)) +
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        labs(title = "Neurodevelopmental Functional Categories by Cell Type and Treatment",
+             x = "Cell Type & Treatment", y = "Functional Category")
+      
+      ggsave("Enhanced_Neuro_Categories_by_CellType_Treatment.pdf", category_plot,
+             width = 16, height = 10)
+      print(category_plot)
+      
+      # Create a separate plot by cell type only
+      category_celltype_summary <- neuro_data %>%
+        group_by(cell_type, functional_category) %>%
+        summarize(term_count = n(), avg_pvalue = mean(pvalue), .groups = 'drop')
+      
+      category_celltype_plot <- ggplot(category_celltype_summary,
+                                       aes(x = cell_type, y = functional_category,
+                                           fill = term_count, size = -log10(avg_pvalue))) +
+        geom_point(shape = 21, color = "black") +
+        scale_fill_viridis_c(name = "Term Count") +
+        scale_size_continuous(name = "-log10(p-value)", range = c(2, 10)) +
+        theme_minimal() +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+        labs(title = "Neurodevelopmental Functional Categories by Cell Type",
+             x = "Cell Type", y = "Functional Category")
+      
+      ggsave("Enhanced_Neuro_Categories_by_CellType.pdf", category_celltype_plot,
+             width = 12, height = 8)
+      print(category_celltype_plot)
+    }
+  }, error = function(e) {
+    message("Error creating enhanced visualizations: ", conditionMessage(e))
+  })
+}
+
+# Execute the analysis
+cat("Starting GO/KEGG analysis of cell type motif data...\n")
+results <- analyze_combined_motifs("combined_celltype_motif_data.csv", fdr_threshold = 0.1)
+cat("Analysis complete!\n")
