@@ -1,0 +1,108 @@
+## Scatterplot displaying the number of DA genes by number of cells, colored by cell type
+
+
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(stringr)
+
+# Read the CSV file
+data <- read.csv("/Users/2023laptop/Library/Mobile Documents/com~apple~CloudDocs/PhD/Dissertation/Ch-3_Manuscript/Supplementary_Files/Pairwise-Peak_Count_2025-06-29.csv")
+
+
+# Clean column names (remove spaces and special characters for easier handling)
+colnames(data) <- make.names(colnames(data))
+
+
+# Get the DA peak count columns (adjust column positions if needed)
+da_columns <- colnames(data)[4:15]  # Columns with DA peak counts
+
+# Reshape data to long format
+data_long <- data %>%
+  pivot_longer(cols = all_of(da_columns), 
+               names_to = "comparison", 
+               values_to = "da_peak_count") %>%
+  filter(da_peak_count > 0) %>%  # Only keep non-zero values
+  mutate(
+    # Extract just the treatment comparison (e.g., "T1 vs T3") from column names
+    point_label = str_extract(comparison, "T\\d+\\.vs\\.T\\d+"),
+    point_label = gsub("\\.", " ", point_label)  # Replace dots with spaces
+  )
+
+# Create the scatterplot
+p <- ggplot(data_long, aes(x = Cell.Count, y = da_peak_count, color = Cell.Type.ID)) +
+  geom_point(size = 3, alpha = 0.7) +
+  geom_text(aes(label = point_label), 
+            vjust = -0.5, hjust = 0.5, size = 2.5, 
+            check_overlap = TRUE, alpha = 0.8) +
+  labs(
+    title = "DA Peak Count vs Cell Count by Cell Type and Comparison",
+    x = "Cell Count",
+    y = "DA Peak Count",
+    color = "Cell Type"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    legend.position = "right",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  scale_x_continuous(labels = scales::comma) +
+  scale_color_viridis_d(option = "viridis") +  # Use viridis color palette
+  guides(color = guide_legend(override.aes = list(size = 4)))
+
+# Display the plot
+print(p)
+
+# Optional: Save the plot
+# ggsave("da_scatterplot.png", plot = p, width = 14, height = 10, dpi = 300)
+
+# Optional: Create a version with better label positioning using ggrepel
+# Uncomment and install ggrepel if you want non-overlapping labels
+
+library(ggrepel)
+
+p_repel <- ggplot(data_long, aes(x = Cell.Count, y = da_peak_count, color = Cell.Type.ID)) +
+  geom_point(size = 3, alpha = 0.7) +
+  geom_text_repel(aes(label = point_label), 
+                  size = 2.2,              # Slightly smaller text
+                  max.overlaps = Inf,      # Allow all labels to show
+                  box.padding = 0.8,       # More space around labels
+                  point.padding = 0.5,     # More space from points
+                  force = 5,               # Strong repelling force
+                  force_pull = 0.1,        # Gentle pull toward points
+                  min.segment.length = 0,  # Always show connector lines
+                  segment.size = 0.3,      # Thinner connector lines
+                  segment.alpha = 0.6,     # Semi-transparent lines
+                  seed = 42) +             # Reproducible positioning
+  labs(
+    title = "DA Peak Count vs Cell Count by Cell Type and Comparison",
+    x = "Cell Count",
+    y = "DA Peak Count", 
+    color = "Cell Type"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    legend.position = "right",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  scale_x_continuous(labels = scales::comma) +
+  scale_color_viridis_d(option = "viridis") +
+  guides(color = guide_legend(override.aes = list(size = 4)))
+
+print(p_repel)
+
+# View summary of the data
+print("Data Summary:")
+print(summary(data))
+print("\nCell type distribution:")
+print(table(data$Cell.Type.ID))
