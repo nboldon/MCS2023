@@ -1,0 +1,1494 @@
+## Calculates significant QC differences betwen treatment groups (TSS enrichment & unique frags)
+
+
+# Primary test: One-way ANOVA comparing 4 treatment groups
+# Multiple testing correction: Benjamini-Hochberg across all clusters
+# Post-hoc tests: Pairwise t-tests with Bonferroni correction (only if ANOVA significant)
+# Significance threshold: BH-adjusted p < 0.05
+
+# Brackets: Connect significantly different treatment groups
+# Stars: Indicate significance levels
+# *** = p < 0.001
+# ** = p < 0.01
+# * = p < 0.05
+
+
+# Load required libraries
+library(ArchR)
+library(ggplot2)
+library(cowplot)
+library(viridis)
+library(dplyr)
+
+# Set working directory
+setwd("/Volumes/DataBox/ProjMCS6/Violin_Plots")
+
+# Load ArchR Project
+projMCS6 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS6", force = FALSE, showLogo = FALSE)
+
+# Helper function to create significance brackets for plots
+create_sig_annotations <- function(pairwise_result, y_max, y_range) {
+  if (is.null(pairwise_result) || is.null(pairwise_result$p.value)) {
+    return(list(annotations = data.frame(), segments = data.frame()))
+  }
+  
+  p_matrix <- pairwise_result$p.value
+  treatments <- c("t1", "t2", "t3", "t4")
+  
+  # Create position mapping for treatments
+  x_positions <- setNames(1:4, treatments)
+  
+  sig_comparisons <- data.frame()
+  row_names <- rownames(p_matrix)
+  col_names <- colnames(p_matrix)
+  
+  # Extract significant comparisons
+  for (i in 1:nrow(p_matrix)) {
+    for (j in 1:ncol(p_matrix)) {
+      if (!is.na(p_matrix[i, j]) && p_matrix[i, j] < 0.05) {
+        treat1 <- row_names[i]
+        treat2 <- col_names[j]
+        
+        if (treat1 %in% treatments && treat2 %in% treatments) {
+          x1 <- x_positions[treat1]
+          x2 <- x_positions[treat2]
+          
+          sig_comparisons <- rbind(sig_comparisons, data.frame(
+            x1 = min(x1, x2),
+            x2 = max(x1, x2),
+            pvalue = p_matrix[i, j],
+            stringsAsFactors = FALSE
+          ))
+        }
+      }
+    }
+  }
+  
+  if (nrow(sig_comparisons) == 0) {
+    return(list(annotations = data.frame(), segments = data.frame()))
+  }
+  
+  # Sort by distance to stack brackets properly
+  sig_comparisons$distance <- sig_comparisons$x2 - sig_comparisons$x1
+  sig_comparisons <- sig_comparisons[order(sig_comparisons$distance, sig_comparisons$x1), ]
+  
+  # Calculate y positions for brackets
+  bracket_height <- y_range * 0.05
+  base_y <- y_max + y_range * 0.02
+  
+  annotations <- data.frame()
+  segments <- data.frame()
+  
+  for (i in 1:nrow(sig_comparisons)) {
+    row <- sig_comparisons[i, ]
+    y_pos <- base_y + (i - 1) * bracket_height * 1.5
+    
+    # Create significance label
+    if (row$pvalue < 0.001) {
+      sig_label <- "***"
+    } else if (row$pvalue < 0.01) {
+      sig_label <- "**"
+    } else if (row$pvalue < 0.05) {
+      sig_label <- "*"
+    } else {
+      sig_label <- "ns"
+    }
+    
+    # Add annotation
+    annotations <- rbind(annotations, data.frame(
+      x = (row$x1 + row$x2) / 2,
+      y = y_pos + bracket_height * 0.3,
+      label = sig_label,
+      stringsAsFactors = FALSE
+    ))
+    
+    # Add bracket segments
+    segments <- rbind(segments, data.frame(
+      x = row$x1, xend = row$x1, y = y_pos, yend = y_pos + bracket_height * 0.2,
+      stringsAsFactors = FALSE
+    ))
+    segments <- rbind(segments, data.frame(
+      x = row$x1, xend = row$x2, y = y_pos, yend = y_pos,
+      stringsAsFactors = FALSE
+    ))
+    segments <- rbind(segments, data.frame(
+      x = row$x2, xend = row$x2, y = y_pos, yend = y_pos + bracket_height * 0.2,
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  return(list(annotations = annotations, segments = segments))
+}
+
+# Helper function to extract significant pairwise comparisons
+extract_sig_comparisons <- function(pairwise_result, alpha = 0.05) {
+  if (is.null(pairwise_result) || is.null(pairwise_result$p.value)) {
+    return("None")
+  }
+  
+  p_matrix <- pairwise_result$p.value
+  sig_pairs <- c()
+  
+  # Get row and column names
+  row_names <- rownames(p_matrix)
+  col_names <- colnames(p_matrix)
+  
+  # Check each comparison
+  for (i in 1:nrow(p_matrix)) {
+    for (j in 1:ncol(p_matrix)) {
+      if (!is.na(p_matrix[i, j]) && p_matrix[i, j] < alpha) {
+        comparison <- paste(row_names[i], "vs", col_names[j])
+        p_val <- round(p_matrix[i, j], 4)
+        sig_pairs <- c(sig_pairs, paste0(comparison, " (p=", p_val, ")"))
+      }
+    }
+  }
+  
+  if (length(sig_pairs) == 0) {
+    return("None")
+  } else {
+    return(paste(sig_pairs, collapse = "; "))
+  }
+}
+
+# Function to perform ANOVA and return results
+perform_anova_analysis <- function(subset_proj, cluster_name) {
+  # Extract cell data
+  cell_data <- getCellColData(subset_proj)
+  
+  # Debug: Print column names
+  cat("Cluster:", cluster_name, "- Available columns:", paste(colnames(cell_data), collapse = ", "), "\n")
+  cat("Number of cells in subset:", length(subset_proj$treatment), "\n")
+  cat("Number of rows in cell_data:", nrow(cell_data), "\n")
+  
+  # Find fragments column
+  log10_nFrags_col <- NULL
+  if ("log10.nFrags." %in% colnames(cell_data)) {
+    log10_nFrags_col <- "log10.nFrags."
+  } else if ("log10(nFrags)" %in% colnames(cell_data)) {
+    log10_nFrags_col <- "log10(nFrags)"
+  } else if ("nFrags" %in% colnames(cell_data)) {
+    log10_nFrags_col <- "nFrags"
+  } else {
+    frag_cols <- grep("frag", colnames(cell_data), ignore.case = TRUE, value = TRUE)
+    if (length(frag_cols) > 0) {
+      log10_nFrags_col <- frag_cols[1]
+      cat("Using column:", log10_nFrags_col, "for fragment counts\n")
+    }
+  }
+  
+  if (is.null(log10_nFrags_col)) {
+    cat("ERROR: Could not find fragments column for cluster", cluster_name, "\n")
+    return(NULL)
+  }
+  
+  # Create data frame for analysis
+  analysis_df <- data.frame(
+    treatment = subset_proj$treatment,
+    TSSEnrichment = cell_data$TSSEnrichment,
+    log10_nFrags = if (log10_nFrags_col == "nFrags") log10(cell_data[[log10_nFrags_col]]) else cell_data[[log10_nFrags_col]],
+    stringsAsFactors = FALSE
+  )
+  
+  # Remove rows with missing values
+  analysis_df <- analysis_df[complete.cases(analysis_df), ]
+  
+  # Check if we have enough data
+  if (nrow(analysis_df) == 0) {
+    cat("WARNING: No complete data for cluster", cluster_name, "\n")
+    return(NULL)
+  }
+  
+  # Check if we have multiple treatment groups
+  if (length(unique(analysis_df$treatment)) < 2) {
+    cat("WARNING: Cluster", cluster_name, "has fewer than 2 treatment groups\n")
+    return(list(
+      cluster = cluster_name,
+      summary_stats = data.frame(treatment = unique(analysis_df$treatment), n_cells = nrow(analysis_df)),
+      tss_anova_pvalue = NA,
+      frags_anova_pvalue = NA,
+      tss_pairwise = NULL,
+      frags_pairwise = NULL
+    ))
+  }
+  
+  # Perform ANOVA for TSSEnrichment
+  tss_anova <- tryCatch({
+    aov(TSSEnrichment ~ treatment, data = analysis_df)
+  }, error = function(e) {
+    cat("Error in TSS ANOVA for cluster", cluster_name, ":", e$message, "\n")
+    return(NULL)
+  })
+  
+  tss_pvalue <- NA
+  if (!is.null(tss_anova)) {
+    tss_summary <- summary(tss_anova)
+    tss_pvalue <- tss_summary[[1]][["Pr(>F)"]][1]
+  }
+  
+  # Perform ANOVA for log10(nFrags)
+  frags_anova <- tryCatch({
+    aov(log10_nFrags ~ treatment, data = analysis_df)
+  }, error = function(e) {
+    cat("Error in nFrags ANOVA for cluster", cluster_name, ":", e$message, "\n")
+    return(NULL)
+  })
+  
+  frags_pvalue <- NA
+  if (!is.null(frags_anova)) {
+    frags_summary <- summary(frags_anova)
+    frags_pvalue <- frags_summary[[1]][["Pr(>F)"]][1]
+  }
+  
+  # Perform pairwise t-tests with Bonferroni correction (if ANOVA is significant)
+  tss_pairwise <- NULL
+  frags_pairwise <- NULL
+  
+  if (!is.na(tss_pvalue) && tss_pvalue < 0.05) {
+    tss_pairwise <- tryCatch({
+      pairwise.t.test(analysis_df$TSSEnrichment, analysis_df$treatment, 
+                      p.adjust.method = "bonferroni")
+    }, error = function(e) {
+      cat("Error in TSS pairwise test for cluster", cluster_name, ":", e$message, "\n")
+      return(NULL)
+    })
+  }
+  
+  if (!is.na(frags_pvalue) && frags_pvalue < 0.05) {
+    frags_pairwise <- tryCatch({
+      pairwise.t.test(analysis_df$log10_nFrags, analysis_df$treatment, 
+                      p.adjust.method = "bonferroni")
+    }, error = function(e) {
+      cat("Error in nFrags pairwise test for cluster", cluster_name, ":", e$message, "\n")
+      return(NULL)
+    })
+  }
+  
+  # Calculate summary statistics by treatment
+  summary_stats <- tryCatch({
+    analysis_df %>%
+      group_by(treatment) %>%
+      summarise(
+        n_cells = n(),
+        TSS_mean = mean(TSSEnrichment, na.rm = TRUE),
+        TSS_sd = sd(TSSEnrichment, na.rm = TRUE),
+        TSS_median = median(TSSEnrichment, na.rm = TRUE),
+        nFrags_mean = mean(log10_nFrags, na.rm = TRUE),
+        nFrags_sd = sd(log10_nFrags, na.rm = TRUE),
+        nFrags_median = median(log10_nFrags, na.rm = TRUE),
+        .groups = 'drop'
+      )
+  }, error = function(e) {
+    cat("Error in summary stats for cluster", cluster_name, ":", e$message, "\n")
+    return(data.frame(treatment = unique(analysis_df$treatment), n_cells = table(analysis_df$treatment)))
+  })
+  
+  return(list(
+    cluster = cluster_name,
+    summary_stats = summary_stats,
+    tss_anova_pvalue = tss_pvalue,
+    frags_anova_pvalue = frags_pvalue,
+    tss_pairwise = tss_pairwise,
+    frags_pairwise = frags_pairwise
+  ))
+}
+
+# Initialize lists to store plots and statistical results
+tss_plots <- list()
+frag_plots <- list()
+statistical_results <- list()
+
+# Open a PDF to save the plots
+pdf("QC-TSS-UniqFrags_byTx-Cluster_ViolinPlots_2025-06-29.pdf", width = 16, height = 12)
+
+# Define the color palette using viridis
+treatment_colors <- viridis(4, option = "D")
+
+# Loop through all clusters
+for (cluster in sort(unique(as.numeric(gsub("C", "", projMCS6$Clusters))))) {
+  
+  cat("\n=== Processing Cluster", cluster, "===\n")
+  
+  # Subset the project for the current cluster
+  subsetProj <- projMCS6[projMCS6$Clusters %in% paste0("C", cluster)]
+  
+  # Assign treatments to the subset
+  treatment <- subsetProj$Sample
+  treatment <- gsub("C302_", "t1", treatment)
+  treatment <- gsub("C306_", "t1", treatment)
+  treatment <- gsub("C309_", "t1", treatment)
+  treatment <- gsub("C318_", "t1", treatment)
+  treatment <- gsub("C323_", "t1", treatment)
+  treatment <- gsub("C328_", "t1", treatment)
+  treatment <- gsub("C332_", "t1", treatment)
+  treatment <- gsub("C337_", "t1", treatment)
+  treatment <- gsub("C339_", "t1", treatment)
+  treatment <- gsub("C346_", "t1", treatment)
+  treatment <- gsub("C351_", "t1", treatment)
+  treatment <- gsub("C353_", "t1", treatment)
+  treatment <- gsub("C360_", "t1", treatment)
+  treatment <- gsub("C304_", "t2", treatment)
+  treatment <- gsub("C308_", "t2", treatment)
+  treatment <- gsub("C312_", "t2", treatment)
+  treatment <- gsub("C349_", "t2", treatment)
+  treatment <- gsub("C315_", "t2", treatment)
+  treatment <- gsub("C321_", "t2", treatment)
+  treatment <- gsub("C324_", "t2", treatment)
+  treatment <- gsub("C355_", "t2", treatment)
+  treatment <- gsub("C327_", "t2", treatment)
+  treatment <- gsub("C330_", "t2", treatment)
+  treatment <- gsub("C333_", "t2", treatment)
+  treatment <- gsub("C358_", "t2", treatment)
+  treatment <- gsub("C336_", "t2", treatment)
+  treatment <- gsub("C342_", "t2", treatment)
+  treatment <- gsub("C348_", "t2", treatment)
+  treatment <- gsub("C362_", "t2", treatment)
+  treatment <- gsub("C305_", "t3", treatment)
+  treatment <- gsub("C307_", "t3", treatment)
+  treatment <- gsub("C313_", "t3", treatment)
+  treatment <- gsub("C350_", "t3", treatment)
+  treatment <- gsub("C316_", "t3", treatment)
+  treatment <- gsub("C320_", "t3", treatment)
+  treatment <- gsub("C322_", "t3", treatment)
+  treatment <- gsub("C352_", "t3", treatment)
+  treatment <- gsub("C325_", "t3", treatment)
+  treatment <- gsub("C334_", "t3", treatment)
+  treatment <- gsub("C359_", "t3", treatment)
+  treatment <- gsub("C340_", "t3", treatment)
+  treatment <- gsub("C341_", "t3", treatment)
+  treatment <- gsub("C345_", "t3", treatment)
+  treatment <- gsub("C364_", "t3", treatment)
+  treatment <- gsub("C301_", "t4", treatment)
+  treatment <- gsub("C303_", "t4", treatment)
+  treatment <- gsub("C310_", "t4", treatment)
+  treatment <- gsub("C314_", "t4", treatment)
+  treatment <- gsub("C319_", "t4", treatment)
+  treatment <- gsub("C335_", "t4", treatment)
+  treatment <- gsub("C338_", "t4", treatment)
+  treatment <- gsub("C344_", "t4", treatment)
+  treatment <- gsub("C354_", "t4", treatment)
+  treatment <- gsub("C356_", "t4", treatment)
+  treatment <- gsub("C361_", "t4", treatment)
+  treatment <- gsub("C363_", "t4", treatment)
+  subsetProj$treatment <- treatment
+  
+  # Perform statistical analysis
+  stats_result <- perform_anova_analysis(subsetProj, paste0("C", cluster))
+  
+  if (!is.null(stats_result)) {
+    statistical_results[[paste0("C", cluster)]] <- stats_result
+    
+    # Create significance annotation for plot titles
+    #tss_sig <- ifelse(!is.na(stats_result$tss_anova_pvalue) && stats_result$tss_anova_pvalue < 0.05, 
+    #                  paste0(" (p=", round(stats_result$tss_anova_pvalue, 4), "*)"), "")
+    #frags_sig <- ifelse(!is.na(stats_result$frags_anova_pvalue) && stats_result$frags_anova_pvalue < 0.05, 
+    #                    paste0(" (p=", round(stats_result$frags_anova_pvalue, 4), "*)"), "")
+    
+    # Create the TSS Enrichment plot
+    tss_plot <- plotGroups(
+      ArchRProj = subsetProj,
+      groupBy = "treatment",
+      colorBy = "cellColData",
+      name = "TSSEnrichment",
+      plotAs = "violin",
+      alpha = 0.4,
+      addBoxPlot = TRUE
+    ) + scale_color_viridis(discrete = TRUE) + 
+      scale_fill_viridis(discrete = TRUE) +
+      ggtitle(paste0("Cluster ", cluster, " - TSSEnrichment by Treatment")) +
+      theme(legend.position = "none")
+    
+    # Add significance annotations for TSS plot
+    if (!is.null(stats_result$tss_pairwise)) {
+      tss_data <- getCellColData(subsetProj)$TSSEnrichment
+      y_max <- max(tss_data, na.rm = TRUE)
+      y_min <- min(tss_data, na.rm = TRUE)
+      y_range <- y_max - y_min
+      
+      sig_info <- create_sig_annotations(stats_result$tss_pairwise, y_max, y_range)
+      
+      if (nrow(sig_info$annotations) > 0) {
+        if (nrow(sig_info$segments) > 0) {
+          tss_plot <- tss_plot + 
+            geom_segment(data = sig_info$segments, 
+                         aes(x = x, y = y, xend = xend, yend = yend),
+                         inherit.aes = FALSE, color = "black", size = 0.5)
+        }
+        
+        tss_plot <- tss_plot + 
+          geom_text(data = sig_info$annotations,
+                    aes(x = x, y = y, label = label),
+                    inherit.aes = FALSE, size = 3, fontface = "bold")
+        
+        max_annotation_y <- max(sig_info$annotations$y)
+        y_expand <- max_annotation_y + y_range * 0.05
+        tss_plot <- tss_plot + ylim(y_min - y_range * 0.05, y_expand)
+      }
+    }
+    
+    tss_plots[[as.character(cluster)]] <- tss_plot
+    
+    # Create the log10(nFrags) plot
+    frag_plot <- plotGroups(
+      ArchRProj = subsetProj,
+      groupBy = "treatment",
+      colorBy = "cellColData",
+      name = "log10(nFrags)",
+      plotAs = "violin",
+      alpha = 0.4,
+      addBoxPlot = TRUE
+    ) + scale_color_viridis(discrete = TRUE) + 
+      scale_fill_viridis(discrete = TRUE) +
+      ggtitle(paste0("Cluster ", cluster, " - log10(nFrags) by Treatment")) +
+      theme(legend.position = "none")
+    
+    # Add significance annotations for nFrags plot
+    cell_data <- getCellColData(subsetProj)
+    
+    log10_nFrags_col <- NULL
+    if ("log10.nFrags." %in% colnames(cell_data)) {
+      log10_nFrags_col <- "log10.nFrags."
+    } else if ("log10(nFrags)" %in% colnames(cell_data)) {
+      log10_nFrags_col <- "log10(nFrags)"
+    } else if ("nFrags" %in% colnames(cell_data)) {
+      log10_nFrags_col <- "nFrags"
+    } else {
+      frag_cols <- grep("frag", colnames(cell_data), ignore.case = TRUE, value = TRUE)
+      if (length(frag_cols) > 0) {
+        log10_nFrags_col <- frag_cols[1]
+      }
+    }
+    
+    if (!is.null(stats_result$frags_pairwise) && !is.null(log10_nFrags_col)) {
+      frags_data <- cell_data[[log10_nFrags_col]]
+      if (log10_nFrags_col == "nFrags") {
+        frags_data <- log10(frags_data)
+      }
+      y_max <- max(frags_data, na.rm = TRUE)
+      y_min <- min(frags_data, na.rm = TRUE)
+      y_range <- y_max - y_min
+      
+      sig_info <- create_sig_annotations(stats_result$frags_pairwise, y_max, y_range)
+      
+      if (nrow(sig_info$annotations) > 0) {
+        if (nrow(sig_info$segments) > 0) {
+          frag_plot <- frag_plot + 
+            geom_segment(data = sig_info$segments, 
+                         aes(x = x, y = y, xend = xend, yend = yend),
+                         inherit.aes = FALSE, color = "black", size = 0.5)
+        }
+        
+        frag_plot <- frag_plot + 
+          geom_text(data = sig_info$annotations,
+                    aes(x = x, y = y, label = label),
+                    inherit.aes = FALSE, size = 3, fontface = "bold")
+        
+        max_annotation_y <- max(sig_info$annotations$y)
+        y_expand <- max_annotation_y + y_range * 0.05
+        frag_plot <- frag_plot + ylim(y_min - y_range * 0.05, y_expand)
+      }
+    }
+    
+    frag_plots[[as.character(cluster)]] <- frag_plot
+  }
+}
+
+# Combine TSS plots into a single page
+if (length(tss_plots) > 0) {
+  tss_combined <- plot_grid(
+    plotlist = tss_plots[order(as.numeric(names(tss_plots)))], 
+    ncol = 5, 
+    align = "v"
+  )
+  print(tss_combined)
+}
+
+# Combine Frags plots into a single page
+if (length(frag_plots) > 0) {
+  frag_combined <- plot_grid(
+    plotlist = frag_plots[order(as.numeric(names(frag_plots)))], 
+    ncol = 5, 
+    align = "v"
+  )
+  print(frag_combined)
+}
+
+# Close the PDF
+dev.off()
+
+# Process statistical results and apply Benjamini-Hochberg correction
+if (length(statistical_results) > 0) {
+  all_tss_pvalues <- sapply(statistical_results, function(x) x$tss_anova_pvalue)
+  all_frags_pvalues <- sapply(statistical_results, function(x) x$frags_anova_pvalue)
+  
+  # Remove NA values for BH correction
+  tss_pvalues_clean <- all_tss_pvalues[!is.na(all_tss_pvalues)]
+  frags_pvalues_clean <- all_frags_pvalues[!is.na(all_frags_pvalues)]
+  
+  # Apply Benjamini-Hochberg correction
+  tss_adj_pvalues <- if(length(tss_pvalues_clean) > 0) p.adjust(tss_pvalues_clean, method = "BH") else numeric(0)
+  frags_adj_pvalues <- if(length(frags_pvalues_clean) > 0) p.adjust(frags_pvalues_clean, method = "BH") else numeric(0)
+  
+  # Extract pairwise comparison results
+  tss_pairwise_results <- sapply(statistical_results, function(x) extract_sig_comparisons(x$tss_pairwise))
+  frags_pairwise_results <- sapply(statistical_results, function(x) extract_sig_comparisons(x$frags_pairwise))
+  
+  # Create summary table with pairwise comparisons
+  summary_table <- data.frame(
+    Cluster = names(statistical_results),
+    TSS_ANOVA_pvalue = all_tss_pvalues,
+    TSS_BH_adjusted_pvalue = NA,
+    TSS_significant_BH = NA,
+    TSS_significant_pairwise = tss_pairwise_results,
+    nFrags_ANOVA_pvalue = all_frags_pvalues,
+    nFrags_BH_adjusted_pvalue = NA,
+    nFrags_significant_BH = NA,
+    nFrags_significant_pairwise = frags_pairwise_results,
+    stringsAsFactors = FALSE
+  )
+  
+  # Fill in adjusted p-values
+  if (length(tss_adj_pvalues) > 0) {
+    summary_table$TSS_BH_adjusted_pvalue[!is.na(summary_table$TSS_ANOVA_pvalue)] <- tss_adj_pvalues
+  }
+  if (length(frags_adj_pvalues) > 0) {
+    summary_table$nFrags_BH_adjusted_pvalue[!is.na(summary_table$nFrags_ANOVA_pvalue)] <- frags_adj_pvalues
+  }
+  
+  # Mark significant results
+  summary_table$TSS_significant_BH <- ifelse(!is.na(summary_table$TSS_BH_adjusted_pvalue) & 
+                                               summary_table$TSS_BH_adjusted_pvalue < 0.05, "YES", "NO")
+  summary_table$nFrags_significant_BH <- ifelse(!is.na(summary_table$nFrags_BH_adjusted_pvalue) & 
+                                                  summary_table$nFrags_BH_adjusted_pvalue < 0.05, "YES", "NO")
+  
+  # Save summary table
+  write.csv(summary_table, "ANOVA_Results_Summary_BH_Corrected_2025-06-29.csv", row.names = FALSE)
+  
+  # Create detailed pairwise comparison table
+  detailed_pairwise <- data.frame(
+    Cluster = character(),
+    Metric = character(),
+    Comparison = character(),
+    Pvalue = numeric(),
+    Significant = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (cluster_name in names(statistical_results)) {
+    result <- statistical_results[[cluster_name]]
+    
+    # Process TSS pairwise comparisons
+    if (!is.null(result$tss_pairwise) && !is.null(result$tss_pairwise$p.value)) {
+      p_matrix <- result$tss_pairwise$p.value
+      row_names <- rownames(p_matrix)
+      col_names <- colnames(p_matrix)
+      
+      for (i in 1:nrow(p_matrix)) {
+        for (j in 1:ncol(p_matrix)) {
+          if (!is.na(p_matrix[i, j])) {
+            detailed_pairwise <- rbind(detailed_pairwise, data.frame(
+              Cluster = cluster_name,
+              Metric = "TSS_Enrichment",
+              Comparison = paste(row_names[i], "vs", col_names[j]),
+              Pvalue = p_matrix[i, j],
+              Significant = ifelse(p_matrix[i, j] < 0.05, "YES", "NO"),
+              stringsAsFactors = FALSE
+            ))
+          }
+        }
+      }
+    }
+    
+    # Process nFrags pairwise comparisons
+    if (!is.null(result$frags_pairwise) && !is.null(result$frags_pairwise$p.value)) {
+      p_matrix <- result$frags_pairwise$p.value
+      row_names <- rownames(p_matrix)
+      col_names <- colnames(p_matrix)
+      
+      for (i in 1:nrow(p_matrix)) {
+        for (j in 1:ncol(p_matrix)) {
+          if (!is.na(p_matrix[i, j])) {
+            detailed_pairwise <- rbind(detailed_pairwise, data.frame(
+              Cluster = cluster_name,
+              Metric = "nFrags",
+              Comparison = paste(row_names[i], "vs", col_names[j]),
+              Pvalue = p_matrix[i, j],
+              Significant = ifelse(p_matrix[i, j] < 0.05, "YES", "NO"),
+              stringsAsFactors = FALSE
+            ))
+          }
+        }
+      }
+    }
+  }
+  
+  # Save detailed pairwise comparison table
+  if (nrow(detailed_pairwise) > 0) {
+    write.csv(detailed_pairwise, "Detailed_Pairwise_Comparisons_2025-06-29.csv", row.names = FALSE)
+  }
+  
+  # Print summary to console
+  cat("\nAnalysis complete!\n")
+  # Print summary to console
+  cat("\nAnalysis complete!\n")
+  cat("Files saved:\n")
+  cat("- Plots: QC-TSS-UniqFrags_byTx-Cluster_ViolinPlots_2025-06-29.pdf\n")
+  cat("- Summary: ANOVA_Results_Summary_BH_Corrected_2025-06-29.csv\n")
+  cat("- Pairwise comparisons: Detailed_Pairwise_Comparisons_2025-06-29.csv\n\n")
+  
+  cat("Summary of significant results (BH corrected p < 0.05):\n")
+  print(summary_table[, c("Cluster", "TSS_significant_BH", "nFrags_significant_BH")])
+  
+  # Show clusters with significant pairwise differences
+  sig_tss_clusters <- summary_table[summary_table$TSS_significant_pairwise != "None", c("Cluster", "TSS_significant_pairwise")]
+  sig_frags_clusters <- summary_table[summary_table$nFrags_significant_pairwise != "None", c("Cluster", "nFrags_significant_pairwise")]
+  
+  if (nrow(sig_tss_clusters) > 0) {
+    cat("\nClusters with significant TSS Enrichment pairwise differences:\n")
+    for (i in 1:nrow(sig_tss_clusters)) {
+      cat("  ", sig_tss_clusters$Cluster[i], ":", sig_tss_clusters$TSS_significant_pairwise[i], "\n")
+    }
+  }
+  
+  if (nrow(sig_frags_clusters) > 0) {
+    cat("\nClusters with significant nFrags pairwise differences:\n")
+    for (i in 1:nrow(sig_frags_clusters)) {
+      cat("  ", sig_frags_clusters$Cluster[i], ":", sig_frags_clusters$nFrags_significant_pairwise[i], "\n")
+    }
+  }
+} else {
+  cat("No statistical results to process.\n")
+}
+
+
+###########################################################
+###########################################################
+###########################################################
+###########################################################
+###########################################################
+
+
+## Run the above code by cell type
+## Different from cluster analysis (above), cell type comparisons report a 
+## biological threshold of |log2FC| >1.25
+
+
+# Primary test: One-way ANOVA comparing 4 treatment groups
+# Multiple testing correction: Benjamini-Hochberg across all cell types
+# Post-hoc tests: Pairwise t-tests with Bonferroni correction (only if ANOVA significant)
+# Significance threshold: BH-adjusted p < 0.05 AND |log2FC| > 1.25
+# Biological significance threshold: |log2FC| > 1.25 (fold change > 2.38)
+
+# Brackets: Connect significantly different treatment groups with biological significance
+# Stars: Indicate significance levels
+# *** = p < 0.001 AND |log2FC| > 1.25
+# ** = p < 0.01 AND |log2FC| > 1.25  
+# * = p < 0.05 AND |log2FC| > 1.25
+
+=== BIOLOGICAL SIGNIFICANCE SUMMARY ===
+  Comparisons passing both statistical (p<0.05) and biological (|log2FC|>1.25) significance: 5 
+Biological significance threshold: |log2FC| > 1.25 (equivalent to >2.38-fold change)
+This filtering removes statistically significant but biologically irrelevant differences.
+
+Cell types with biologically significant TSS Enrichment differences (|log2FC| > 1.25):
+  Oligodendrocytes : t3 vs t1 (p=0, log2FC=1.28); t4 vs t1 (p=0, log2FC=1.79); t4 vs t2 (p=0, log2FC=1.478) 
+Microglia : t3 vs t1 (p=0, log2FC=1.468); t4 vs t1 (p=0, log2FC=1.56) 
+
+No cell types have biologically significant nFrags differences (|log2FC| > 1.25)
+
+
+
+# Load required libraries
+library(ArchR)
+library(ggplot2)
+library(cowplot)
+library(viridis)
+library(dplyr)
+
+# Set working directory
+setwd("/Volumes/DataBox/ProjMCS6/Violin_Plots")
+
+# Load ArchR Project
+projMCS6 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS6", force = FALSE, showLogo = FALSE)
+
+# Define cell type mappings
+celltype_mapping <- list(
+  "Glutamatergic" = c("C18", "C19", "C21"),
+  "GABAergic" = c("C22", "C23"),
+  "Oligodendrocytes" = c("C2", "C3"),
+  "Astrocytes" = c("C8"),
+  "Microglia" = c("C10", "C11"),
+  "Endothelial-vascular" = c("C12", "C14")
+)
+
+# Helper function to calculate log2 fold change between groups
+calculate_log2fc <- function(group1_values, group2_values) {
+  mean1 <- mean(group1_values, na.rm = TRUE)
+  mean2 <- mean(group2_values, na.rm = TRUE)
+  
+  # For log-transformed data, difference of logs = log of ratio
+  log2fc <- mean2 - mean1
+  return(log2fc)
+}
+
+# Helper function to check biological significance
+is_biologically_significant <- function(log2fc, threshold = 1.25) {
+  return(abs(log2fc) > threshold)
+}
+
+# Helper function to create significance bracket annotations with biological significance
+create_sig_annotations <- function(pairwise_result, analysis_df, metric_name, y_max, y_range, bio_threshold = 1.25) {
+  if (is.null(pairwise_result) || is.null(pairwise_result$p.value)) {
+    return(list(annotations = data.frame(), segments = data.frame()))
+  }
+  
+  p_matrix <- pairwise_result$p.value
+  treatments <- c("t1", "t2", "t3", "t4")
+  
+  # Create position mapping for treatments
+  x_positions <- setNames(1:4, treatments)
+  
+  sig_comparisons <- data.frame()
+  row_names <- rownames(p_matrix)
+  col_names <- colnames(p_matrix)
+  
+  # Extract significant comparisons with biological significance
+  for (i in 1:nrow(p_matrix)) {
+    for (j in 1:ncol(p_matrix)) {
+      if (!is.na(p_matrix[i, j]) && p_matrix[i, j] < 0.05) {
+        treat1 <- row_names[i]
+        treat2 <- col_names[j]
+        
+        if (treat1 %in% treatments && treat2 %in% treatments) {
+          # Calculate log2FC for this comparison
+          group1_data <- analysis_df[analysis_df$treatment == treat1, metric_name]
+          group2_data <- analysis_df[analysis_df$treatment == treat2, metric_name]
+          
+          if (length(group1_data) > 0 && length(group2_data) > 0) {
+            log2fc <- calculate_log2fc(group1_data, group2_data)
+            
+            # Only include if biologically significant
+            if (is_biologically_significant(log2fc, bio_threshold)) {
+              x1 <- x_positions[treat1]
+              x2 <- x_positions[treat2]
+              
+              sig_comparisons <- rbind(sig_comparisons, data.frame(
+                x1 = min(x1, x2),
+                x2 = max(x1, x2),
+                pvalue = p_matrix[i, j],
+                log2fc = log2fc,
+                stringsAsFactors = FALSE
+              ))
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  if (nrow(sig_comparisons) == 0) {
+    return(list(annotations = data.frame(), segments = data.frame()))
+  }
+  
+  # Sort by distance to stack brackets properly
+  sig_comparisons$distance <- sig_comparisons$x2 - sig_comparisons$x1
+  sig_comparisons <- sig_comparisons[order(sig_comparisons$distance, sig_comparisons$x1), ]
+  
+  # Calculate y positions for brackets
+  bracket_height <- y_range * 0.05
+  base_y <- y_max + y_range * 0.02
+  
+  annotations <- data.frame()
+  segments <- data.frame()
+  
+  for (i in 1:nrow(sig_comparisons)) {
+    row <- sig_comparisons[i, ]
+    y_pos <- base_y + (i - 1) * bracket_height * 1.5
+    
+    # Create significance label (only for biologically + statistically significant)
+    if (row$pvalue < 0.001) {
+      sig_label <- "***"
+    } else if (row$pvalue < 0.01) {
+      sig_label <- "**"
+    } else if (row$pvalue < 0.05) {
+      sig_label <- "*"
+    } else {
+      sig_label <- "ns"
+    }
+    
+    # Add annotation
+    annotations <- rbind(annotations, data.frame(
+      x = (row$x1 + row$x2) / 2,
+      y = y_pos + bracket_height * 0.3,
+      label = sig_label,
+      stringsAsFactors = FALSE
+    ))
+    
+    # Add bracket segments
+    segments <- rbind(segments, data.frame(
+      x = row$x1, xend = row$x1, y = y_pos, yend = y_pos + bracket_height * 0.2,
+      stringsAsFactors = FALSE
+    ))
+    segments <- rbind(segments, data.frame(
+      x = row$x1, xend = row$x2, y = y_pos, yend = y_pos,
+      stringsAsFactors = FALSE
+    ))
+    segments <- rbind(segments, data.frame(
+      x = row$x2, xend = row$x2, y = y_pos, yend = y_pos + bracket_height * 0.2,
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  return(list(annotations = annotations, segments = segments))
+}
+
+# Helper function to extract significant pairwise comparisons with biological significance
+extract_sig_comparisons <- function(pairwise_result, analysis_df, metric_name, alpha = 0.05, bio_threshold = 1.25) {
+  if (is.null(pairwise_result) || is.null(pairwise_result$p.value)) {
+    return("None")
+  }
+  
+  p_matrix <- pairwise_result$p.value
+  sig_pairs <- c()
+  
+  # Get row and column names
+  row_names <- rownames(p_matrix)
+  col_names <- colnames(p_matrix)
+  
+  # Check each comparison
+  for (i in 1:nrow(p_matrix)) {
+    for (j in 1:ncol(p_matrix)) {
+      if (!is.na(p_matrix[i, j]) && p_matrix[i, j] < alpha) {
+        treat1 <- row_names[i]
+        treat2 <- col_names[j]
+        
+        # Calculate log2FC for this comparison
+        group1_data <- analysis_df[analysis_df$treatment == treat1, metric_name]
+        group2_data <- analysis_df[analysis_df$treatment == treat2, metric_name]
+        
+        if (length(group1_data) > 0 && length(group2_data) > 0) {
+          log2fc <- calculate_log2fc(group1_data, group2_data)
+          
+          # Only include if biologically significant
+          if (is_biologically_significant(log2fc, bio_threshold)) {
+            comparison <- paste(treat1, "vs", treat2)
+            p_val <- round(p_matrix[i, j], 4)
+            fc_val <- round(log2fc, 3)
+            sig_pairs <- c(sig_pairs, paste0(comparison, " (p=", p_val, ", log2FC=", fc_val, ")"))
+          }
+        }
+      }
+    }
+  }
+  
+  if (length(sig_pairs) == 0) {
+    return("None")
+  } else {
+    return(paste(sig_pairs, collapse = "; "))
+  }
+}
+
+# Function to perform ANOVA and return results
+perform_anova_analysis <- function(subset_proj, celltype_name) {
+  # Extract cell data
+  cell_data <- getCellColData(subset_proj)
+  
+  # Debug: Print column names
+  cat("Cell type:", celltype_name, "- Available columns:", paste(colnames(cell_data), collapse = ", "), "\n")
+  cat("Number of cells in subset:", length(subset_proj$treatment), "\n")
+  cat("Number of rows in cell_data:", nrow(cell_data), "\n")
+  
+  # Find fragments column
+  log10_nFrags_col <- NULL
+  if ("log10.nFrags." %in% colnames(cell_data)) {
+    log10_nFrags_col <- "log10.nFrags."
+  } else if ("log10(nFrags)" %in% colnames(cell_data)) {
+    log10_nFrags_col <- "log10(nFrags)"
+  } else if ("nFrags" %in% colnames(cell_data)) {
+    log10_nFrags_col <- "nFrags"
+  } else {
+    frag_cols <- grep("frag", colnames(cell_data), ignore.case = TRUE, value = TRUE)
+    if (length(frag_cols) > 0) {
+      log10_nFrags_col <- frag_cols[1]
+      cat("Using column:", log10_nFrags_col, "for fragment counts\n")
+    }
+  }
+  
+  if (is.null(log10_nFrags_col)) {
+    cat("ERROR: Could not find fragments column for cell type", celltype_name, "\n")
+    return(NULL)
+  }
+  
+  # Create data frame for analysis
+  analysis_df <- data.frame(
+    treatment = subset_proj$treatment,
+    TSSEnrichment = cell_data$TSSEnrichment,
+    log10_nFrags = if (log10_nFrags_col == "nFrags") log10(cell_data[[log10_nFrags_col]]) else cell_data[[log10_nFrags_col]],
+    stringsAsFactors = FALSE
+  )
+  
+  # Remove rows with missing values
+  analysis_df <- analysis_df[complete.cases(analysis_df), ]
+  
+  # Check if we have enough data
+  if (nrow(analysis_df) == 0) {
+    cat("WARNING: No complete data for cell type", celltype_name, "\n")
+    return(NULL)
+  }
+  
+  # Check if we have multiple treatment groups
+  if (length(unique(analysis_df$treatment)) < 2) {
+    cat("WARNING: Cell type", celltype_name, "has fewer than 2 treatment groups\n")
+    return(list(
+      celltype = celltype_name,
+      summary_stats = data.frame(treatment = unique(analysis_df$treatment), n_cells = nrow(analysis_df)),
+      analysis_df = analysis_df,
+      tss_anova_pvalue = NA,
+      frags_anova_pvalue = NA,
+      tss_pairwise = NULL,
+      frags_pairwise = NULL
+    ))
+  }
+  
+  # Perform ANOVA for TSSEnrichment
+  tss_anova <- tryCatch({
+    aov(TSSEnrichment ~ treatment, data = analysis_df)
+  }, error = function(e) {
+    cat("Error in TSS ANOVA for cell type", celltype_name, ":", e$message, "\n")
+    return(NULL)
+  })
+  
+  tss_pvalue <- NA
+  if (!is.null(tss_anova)) {
+    tss_summary <- summary(tss_anova)
+    tss_pvalue <- tss_summary[[1]][["Pr(>F)"]][1]
+  }
+  
+  # Perform ANOVA for log10(nFrags)
+  frags_anova <- tryCatch({
+    aov(log10_nFrags ~ treatment, data = analysis_df)
+  }, error = function(e) {
+    cat("Error in nFrags ANOVA for cell type", celltype_name, ":", e$message, "\n")
+    return(NULL)
+  })
+  
+  frags_pvalue <- NA
+  if (!is.null(frags_anova)) {
+    frags_summary <- summary(frags_anova)
+    frags_pvalue <- frags_summary[[1]][["Pr(>F)"]][1]
+  }
+  
+  # Perform pairwise t-tests with Bonferroni correction (if ANOVA is significant)
+  tss_pairwise <- NULL
+  frags_pairwise <- NULL
+  
+  if (!is.na(tss_pvalue) && tss_pvalue < 0.05) {
+    tss_pairwise <- tryCatch({
+      pairwise.t.test(analysis_df$TSSEnrichment, analysis_df$treatment, 
+                      p.adjust.method = "bonferroni")
+    }, error = function(e) {
+      cat("Error in TSS pairwise test for cell type", celltype_name, ":", e$message, "\n")
+      return(NULL)
+    })
+  }
+  
+  if (!is.na(frags_pvalue) && frags_pvalue < 0.05) {
+    frags_pairwise <- tryCatch({
+      pairwise.t.test(analysis_df$log10_nFrags, analysis_df$treatment, 
+                      p.adjust.method = "bonferroni")
+    }, error = function(e) {
+      cat("Error in nFrags pairwise test for cell type", celltype_name, ":", e$message, "\n")
+      return(NULL)
+    })
+  }
+  
+  # Calculate summary statistics by treatment
+  summary_stats <- tryCatch({
+    analysis_df %>%
+      group_by(treatment) %>%
+      summarise(
+        n_cells = n(),
+        TSS_mean = mean(TSSEnrichment, na.rm = TRUE),
+        TSS_sd = sd(TSSEnrichment, na.rm = TRUE),
+        TSS_median = median(TSSEnrichment, na.rm = TRUE),
+        nFrags_mean = mean(log10_nFrags, na.rm = TRUE),
+        nFrags_sd = sd(log10_nFrags, na.rm = TRUE),
+        nFrags_median = median(log10_nFrags, na.rm = TRUE),
+        .groups = 'drop'
+      )
+  }, error = function(e) {
+    cat("Error in summary stats for cell type", celltype_name, ":", e$message, "\n")
+    return(data.frame(treatment = unique(analysis_df$treatment), n_cells = table(analysis_df$treatment)))
+  })
+  
+  return(list(
+    celltype = celltype_name,
+    summary_stats = summary_stats,
+    analysis_df = analysis_df,  # Include analysis_df for log2FC calculations
+    tss_anova_pvalue = tss_pvalue,
+    frags_anova_pvalue = frags_pvalue,
+    tss_pairwise = tss_pairwise,
+    frags_pairwise = frags_pairwise
+  ))
+}
+
+# Function to assign treatments
+assign_treatments <- function(sample_names) {
+  treatment <- sample_names
+  treatment <- gsub("C302_", "t1", treatment)
+  treatment <- gsub("C306_", "t1", treatment)
+  treatment <- gsub("C309_", "t1", treatment)
+  treatment <- gsub("C318_", "t1", treatment)
+  treatment <- gsub("C323_", "t1", treatment)
+  treatment <- gsub("C328_", "t1", treatment)
+  treatment <- gsub("C332_", "t1", treatment)
+  treatment <- gsub("C337_", "t1", treatment)
+  treatment <- gsub("C339_", "t1", treatment)
+  treatment <- gsub("C346_", "t1", treatment)
+  treatment <- gsub("C351_", "t1", treatment)
+  treatment <- gsub("C353_", "t1", treatment)
+  treatment <- gsub("C360_", "t1", treatment)
+  treatment <- gsub("C304_", "t2", treatment)
+  treatment <- gsub("C308_", "t2", treatment)
+  treatment <- gsub("C312_", "t2", treatment)
+  treatment <- gsub("C349_", "t2", treatment)
+  treatment <- gsub("C315_", "t2", treatment)
+  treatment <- gsub("C321_", "t2", treatment)
+  treatment <- gsub("C324_", "t2", treatment)
+  treatment <- gsub("C355_", "t2", treatment)
+  treatment <- gsub("C327_", "t2", treatment)
+  treatment <- gsub("C330_", "t2", treatment)
+  treatment <- gsub("C333_", "t2", treatment)
+  treatment <- gsub("C358_", "t2", treatment)
+  treatment <- gsub("C336_", "t2", treatment)
+  treatment <- gsub("C342_", "t2", treatment)
+  treatment <- gsub("C348_", "t2", treatment)
+  treatment <- gsub("C362_", "t2", treatment)
+  treatment <- gsub("C305_", "t3", treatment)
+  treatment <- gsub("C307_", "t3", treatment)
+  treatment <- gsub("C313_", "t3", treatment)
+  treatment <- gsub("C350_", "t3", treatment)
+  treatment <- gsub("C316_", "t3", treatment)
+  treatment <- gsub("C320_", "t3", treatment)
+  treatment <- gsub("C322_", "t3", treatment)
+  treatment <- gsub("C352_", "t3", treatment)
+  treatment <- gsub("C325_", "t3", treatment)
+  treatment <- gsub("C334_", "t3", treatment)
+  treatment <- gsub("C359_", "t3", treatment)
+  treatment <- gsub("C340_", "t3", treatment)
+  treatment <- gsub("C341_", "t3", treatment)
+  treatment <- gsub("C345_", "t3", treatment)
+  treatment <- gsub("C364_", "t3", treatment)
+  treatment <- gsub("C301_", "t4", treatment)
+  treatment <- gsub("C303_", "t4", treatment)
+  treatment <- gsub("C310_", "t4", treatment)
+  treatment <- gsub("C314_", "t4", treatment)
+  treatment <- gsub("C319_", "t4", treatment)
+  treatment <- gsub("C335_", "t4", treatment)
+  treatment <- gsub("C338_", "t4", treatment)
+  treatment <- gsub("C344_", "t4", treatment)
+  treatment <- gsub("C354_", "t4", treatment)
+  treatment <- gsub("C356_", "t4", treatment)
+  treatment <- gsub("C361_", "t4", treatment)
+  treatment <- gsub("C363_", "t4", treatment)
+  return(treatment)
+}
+
+# Initialize lists to store plots and statistical results
+tss_plots <- list()
+frag_plots <- list()
+statistical_results <- list()
+
+# Open a PDF to save the plots
+pdf("QC-TSS-UniqFrags_byTx-CellType_ViolinPlots_2025-06-29.pdf", width = 16, height = 12)
+
+# Define the color palette using viridis
+treatment_colors <- viridis(4, option = "D")
+
+# Loop through all cell types
+for (celltype_name in names(celltype_mapping)) {
+  
+  cat("\n=== Processing Cell Type:", celltype_name, "===\n")
+  
+  # Get clusters for this cell type
+  clusters_for_celltype <- celltype_mapping[[celltype_name]]
+  cat("Combining clusters:", paste(clusters_for_celltype, collapse = ", "), "\n")
+  
+  # Subset the project for the current cell type (multiple clusters)
+  subsetProj <- projMCS6[projMCS6$Clusters %in% clusters_for_celltype]
+  
+  # Check if we have any cells
+  if (length(subsetProj$Sample) == 0) {
+    cat("WARNING: No cells found for cell type", celltype_name, "\n")
+    next
+  }
+  
+  # Assign treatments to the subset
+  treatment <- assign_treatments(subsetProj$Sample)
+  subsetProj$treatment <- treatment
+  
+  # Perform statistical analysis
+  stats_result <- perform_anova_analysis(subsetProj, celltype_name)
+  
+  if (!is.null(stats_result)) {
+    statistical_results[[celltype_name]] <- stats_result
+    
+    # Create the TSS Enrichment plot
+    tss_plot <- plotGroups(
+      ArchRProj = subsetProj,
+      groupBy = "treatment",
+      colorBy = "cellColData",
+      name = "TSSEnrichment",
+      plotAs = "violin",
+      alpha = 0.4,
+      addBoxPlot = TRUE
+    ) + scale_color_viridis(discrete = TRUE) + 
+      scale_fill_viridis(discrete = TRUE) +
+      ggtitle(paste0(celltype_name, " - TSSEnrichment by Treatment")) +
+      theme(legend.position = "none")
+    
+    # Add significance annotations for TSS plot with biological significance check
+    if (!is.null(stats_result$tss_pairwise)) {
+      tss_data <- getCellColData(subsetProj)$TSSEnrichment
+      y_max <- max(tss_data, na.rm = TRUE)
+      y_min <- min(tss_data, na.rm = TRUE)
+      y_range <- y_max - y_min
+      
+      # Create analysis dataframe for log2FC calculations
+      cell_data <- getCellColData(subsetProj)
+      analysis_df <- data.frame(
+        treatment = subsetProj$treatment,
+        TSSEnrichment = cell_data$TSSEnrichment,
+        stringsAsFactors = FALSE
+      )
+      analysis_df <- analysis_df[complete.cases(analysis_df), ]
+      
+      sig_info <- create_sig_annotations(stats_result$tss_pairwise, analysis_df, "TSSEnrichment", y_max, y_range)
+      
+      if (nrow(sig_info$annotations) > 0) {
+        if (nrow(sig_info$segments) > 0) {
+          tss_plot <- tss_plot + 
+            geom_segment(data = sig_info$segments, 
+                         aes(x = x, y = y, xend = xend, yend = yend),
+                         inherit.aes = FALSE, color = "black", size = 0.5)
+        }
+        
+        tss_plot <- tss_plot + 
+          geom_text(data = sig_info$annotations,
+                    aes(x = x, y = y, label = label),
+                    inherit.aes = FALSE, size = 3, fontface = "bold")
+        
+        max_annotation_y <- max(sig_info$annotations$y)
+        y_expand <- max_annotation_y + y_range * 0.05
+        tss_plot <- tss_plot + ylim(y_min - y_range * 0.05, y_expand)
+      }
+    }
+    
+    tss_plots[[celltype_name]] <- tss_plot
+    
+    # Create the log10(nFrags) plot
+    frag_plot <- plotGroups(
+      ArchRProj = subsetProj,
+      groupBy = "treatment",
+      colorBy = "cellColData",
+      name = "log10(nFrags)",
+      plotAs = "violin",
+      alpha = 0.4,
+      addBoxPlot = TRUE
+    ) + scale_color_viridis(discrete = TRUE) + 
+      scale_fill_viridis(discrete = TRUE) +
+      ggtitle(paste0(celltype_name, " - log10(nFrags) by Treatment")) +
+      theme(legend.position = "none")
+    
+    # Add significance annotations for nFrags plot
+    cell_data <- getCellColData(subsetProj)
+    
+    log10_nFrags_col <- NULL
+    if ("log10.nFrags." %in% colnames(cell_data)) {
+      log10_nFrags_col <- "log10.nFrags."
+    } else if ("log10(nFrags)" %in% colnames(cell_data)) {
+      log10_nFrags_col <- "log10(nFrags)"
+    } else if ("nFrags" %in% colnames(cell_data)) {
+      log10_nFrags_col <- "nFrags"
+    } else {
+      frag_cols <- grep("frag", colnames(cell_data), ignore.case = TRUE, value = TRUE)
+      if (length(frag_cols) > 0) {
+        log10_nFrags_col <- frag_cols[1]
+      }
+    }
+    
+    if (!is.null(stats_result$frags_pairwise) && !is.null(log10_nFrags_col)) {
+      frags_data <- cell_data[[log10_nFrags_col]]
+      if (log10_nFrags_col == "nFrags") {
+        frags_data <- log10(frags_data)
+      }
+      y_max <- max(frags_data, na.rm = TRUE)
+      y_min <- min(frags_data, na.rm = TRUE)
+      y_range <- y_max - y_min
+      
+      # Create analysis dataframe for log2FC calculations
+      analysis_df_frags <- data.frame(
+        treatment = subsetProj$treatment,
+        log10_nFrags = if (log10_nFrags_col == "nFrags") log10(cell_data[[log10_nFrags_col]]) else cell_data[[log10_nFrags_col]],
+        stringsAsFactors = FALSE
+      )
+      analysis_df_frags <- analysis_df_frags[complete.cases(analysis_df_frags), ]
+      
+      sig_info <- create_sig_annotations(stats_result$frags_pairwise, analysis_df_frags, "log10_nFrags", y_max, y_range)
+      
+      if (nrow(sig_info$annotations) > 0) {
+        if (nrow(sig_info$segments) > 0) {
+          frag_plot <- frag_plot + 
+            geom_segment(data = sig_info$segments, 
+                         aes(x = x, y = y, xend = xend, yend = yend),
+                         inherit.aes = FALSE, color = "black", size = 0.5)
+        }
+        
+        frag_plot <- frag_plot + 
+          geom_text(data = sig_info$annotations,
+                    aes(x = x, y = y, label = label),
+                    inherit.aes = FALSE, size = 3, fontface = "bold")
+        
+        max_annotation_y <- max(sig_info$annotations$y)
+        y_expand <- max_annotation_y + y_range * 0.05
+        frag_plot <- frag_plot + ylim(y_min - y_range * 0.05, y_expand)
+      }
+    }
+    
+    frag_plots[[celltype_name]] <- frag_plot
+  }
+}
+
+# Combine TSS plots into a single page
+if (length(tss_plots) > 0) {
+  tss_combined <- plot_grid(
+    plotlist = tss_plots, 
+    ncol = 3, 
+    align = "v"
+  )
+  print(tss_combined)
+}
+
+# Combine Frags plots into a single page
+if (length(frag_plots) > 0) {
+  frag_combined <- plot_grid(
+    plotlist = frag_plots, 
+    ncol = 3, 
+    align = "v"
+  )
+  print(frag_combined)
+}
+
+# Close the PDF
+dev.off()
+
+# Process statistical results and apply Benjamini-Hochberg correction
+if (length(statistical_results) > 0) {
+  all_tss_pvalues <- sapply(statistical_results, function(x) x$tss_anova_pvalue)
+  all_frags_pvalues <- sapply(statistical_results, function(x) x$frags_anova_pvalue)
+  
+  # Remove NA values for BH correction
+  tss_pvalues_clean <- all_tss_pvalues[!is.na(all_tss_pvalues)]
+  frags_pvalues_clean <- all_frags_pvalues[!is.na(all_frags_pvalues)]
+  
+  # Apply Benjamini-Hochberg correction
+  tss_adj_pvalues <- if(length(tss_pvalues_clean) > 0) p.adjust(tss_pvalues_clean, method = "BH") else numeric(0)
+  frags_adj_pvalues <- if(length(frags_pvalues_clean) > 0) p.adjust(frags_pvalues_clean, method = "BH") else numeric(0)
+  
+  # Extract pairwise comparison results with biological significance
+  tss_pairwise_results <- sapply(statistical_results, function(x) {
+    if (!is.null(x$analysis_df)) {
+      extract_sig_comparisons(x$tss_pairwise, x$analysis_df, "TSSEnrichment")
+    } else {
+      "None"
+    }
+  })
+  frags_pairwise_results <- sapply(statistical_results, function(x) {
+    if (!is.null(x$analysis_df)) {
+      extract_sig_comparisons(x$frags_pairwise, x$analysis_df, "log10_nFrags")
+    } else {
+      "None"
+    }
+  })
+  
+  # Create summary table with pairwise comparisons
+  summary_table <- data.frame(
+    CellType = names(statistical_results),
+    Clusters_Combined = sapply(names(statistical_results), function(x) paste(celltype_mapping[[x]], collapse = ", ")),
+    TSS_ANOVA_pvalue = all_tss_pvalues,
+    TSS_BH_adjusted_pvalue = NA,
+    TSS_significant_BH = NA,
+    TSS_significant_pairwise_bio = tss_pairwise_results,
+    nFrags_ANOVA_pvalue = all_frags_pvalues,
+    nFrags_BH_adjusted_pvalue = NA,
+    nFrags_significant_BH = NA,
+    nFrags_significant_pairwise_bio = frags_pairwise_results,
+    stringsAsFactors = FALSE
+  )
+  
+  # Fill in adjusted p-values
+  if (length(tss_adj_pvalues) > 0) {
+    summary_table$TSS_BH_adjusted_pvalue[!is.na(summary_table$TSS_ANOVA_pvalue)] <- tss_adj_pvalues
+  }
+  if (length(frags_adj_pvalues) > 0) {
+    summary_table$nFrags_BH_adjusted_pvalue[!is.na(summary_table$nFrags_ANOVA_pvalue)] <- frags_adj_pvalues
+  }
+  
+  # Mark significant results
+  summary_table$TSS_significant_BH <- ifelse(!is.na(summary_table$TSS_BH_adjusted_pvalue) & 
+                                               summary_table$TSS_BH_adjusted_pvalue < 0.05, "YES", "NO")
+  summary_table$nFrags_significant_BH <- ifelse(!is.na(summary_table$nFrags_BH_adjusted_pvalue) & 
+                                                  summary_table$nFrags_BH_adjusted_pvalue < 0.05, "YES", "NO")
+  
+  # Save summary table
+  write.csv(summary_table, "ANOVA_Results_Summary_CellType_BioSig_2025-06-29.csv", row.names = FALSE)
+  
+  # Create detailed pairwise comparison table with biological significance
+  detailed_pairwise <- data.frame(
+    CellType = character(),
+    Metric = character(),
+    Comparison = character(),
+    Pvalue = numeric(),
+    Log2FC = numeric(),
+    Biologically_Significant = character(),
+    Significant = character(),
+    stringsAsFactors = FALSE
+  )
+  
+  for (celltype_name in names(statistical_results)) {
+    result <- statistical_results[[celltype_name]]
+    
+    # Process TSS pairwise comparisons
+    if (!is.null(result$tss_pairwise) && !is.null(result$tss_pairwise$p.value)) {
+      p_matrix <- result$tss_pairwise$p.value
+      row_names <- rownames(p_matrix)
+      col_names <- colnames(p_matrix)
+      
+      for (i in 1:nrow(p_matrix)) {
+        for (j in 1:ncol(p_matrix)) {
+          if (!is.na(p_matrix[i, j])) {
+            if (!is.null(result$analysis_df)) {
+              # Calculate log2FC for this comparison
+              group1_data <- result$analysis_df[result$analysis_df$treatment == row_names[i], "TSSEnrichment"]
+              group2_data <- result$analysis_df[result$analysis_df$treatment == col_names[j], "TSSEnrichment"]
+              
+              if (length(group1_data) > 0 && length(group2_data) > 0) {
+                log2fc <- calculate_log2fc(group1_data, group2_data)
+                
+                # Only include if biologically significant
+                if (is_biologically_significant(log2fc, 1.25)) {
+                  detailed_pairwise <- rbind(detailed_pairwise, data.frame(
+                    CellType = celltype_name,
+                    Metric = "TSS_Enrichment",
+                    Comparison = paste(row_names[i], "vs", col_names[j]),
+                    Pvalue = p_matrix[i, j],
+                    Log2FC = log2fc,
+                    Biologically_Significant = "YES",
+                    Significant = ifelse(p_matrix[i, j] < 0.05, "YES", "NO"),
+                    stringsAsFactors = FALSE
+                  ))
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    # Process nFrags pairwise comparisons
+    if (!is.null(result$frags_pairwise) && !is.null(result$frags_pairwise$p.value)) {
+      p_matrix <- result$frags_pairwise$p.value
+      row_names <- rownames(p_matrix)
+      col_names <- colnames(p_matrix)
+      
+      for (i in 1:nrow(p_matrix)) {
+        for (j in 1:ncol(p_matrix)) {
+          if (!is.na(p_matrix[i, j])) {
+            if (!is.null(result$analysis_df)) {
+              # Calculate log2FC for this comparison
+              group1_data <- result$analysis_df[result$analysis_df$treatment == row_names[i], "log10_nFrags"]
+              group2_data <- result$analysis_df[result$analysis_df$treatment == col_names[j], "log10_nFrags"]
+              
+              if (length(group1_data) > 0 && length(group2_data) > 0) {
+                log2fc <- calculate_log2fc(group1_data, group2_data)
+                
+                # Only include if biologically significant
+                if (is_biologically_significant(log2fc, 1.25)) {
+                  detailed_pairwise <- rbind(detailed_pairwise, data.frame(
+                    CellType = celltype_name,
+                    Metric = "nFrags",
+                    Comparison = paste(row_names[i], "vs", col_names[j]),
+                    Pvalue = p_matrix[i, j],
+                    Log2FC = log2fc,
+                    Biologically_Significant = "YES",
+                    Significant = ifelse(p_matrix[i, j] < 0.05, "YES", "NO"),
+                    stringsAsFactors = FALSE
+                  ))
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  # Save detailed pairwise comparison table
+  if (nrow(detailed_pairwise) > 0) {
+    write.csv(detailed_pairwise, "Detailed_Pairwise_Comparisons_CellType_BioSig_2025-06-29.csv", row.names = FALSE)
+  }
+  
+  # Print summary to console
+  cat("\nCell Type Analysis complete (with biological significance |log2FC| > 1.25)!\n")
+  cat("Files saved:\n")
+  cat("- Plots: QC-TSS-UniqFrags_byTx-CellType_ViolinPlots_2025-06-29.pdf\n")
+  cat("- Summary: ANOVA_Results_Summary_CellType_BioSig_2025-06-29.csv\n")
+  cat("- Pairwise comparisons: Detailed_Pairwise_Comparisons_CellType_BioSig_2025-06-29.csv\n\n")
+  
+  cat("Summary of significant results (BH corrected p < 0.05):\n")
+  print(summary_table[, c("CellType", "Clusters_Combined", "TSS_significant_BH", "nFrags_significant_BH")])
+  
+  # Show cell types with biologically significant pairwise differences
+  sig_tss_celltypes <- summary_table[summary_table$TSS_significant_pairwise_bio != "None", c("CellType", "TSS_significant_pairwise_bio")]
+  sig_frags_celltypes <- summary_table[summary_table$nFrags_significant_pairwise_bio != "None", c("CellType", "nFrags_significant_pairwise_bio")]
+  
+  if (nrow(sig_tss_celltypes) > 0) {
+    cat("\nCell types with biologically significant TSS Enrichment differences (|log2FC| > 1.25):\n")
+    for (i in 1:nrow(sig_tss_celltypes)) {
+      cat("  ", sig_tss_celltypes$CellType[i], ":", sig_tss_celltypes$TSS_significant_pairwise_bio[i], "\n")
+    }
+  } else {
+    cat("\nNo cell types have biologically significant TSS Enrichment differences (|log2FC| > 1.25)\n")
+  }
+  
+  if (nrow(sig_frags_celltypes) > 0) {
+    cat("\nCell types with biologically significant nFrags differences (|log2FC| > 1.25):\n")
+    for (i in 1:nrow(sig_frags_celltypes)) {
+      cat("  ", sig_frags_celltypes$CellType[i], ":", sig_frags_celltypes$nFrags_significant_pairwise_bio[i], "\n")
+    }
+  } else {
+    cat("\nNo cell types have biologically significant nFrags differences (|log2FC| > 1.25)\n")
+  }
+  
+  # Additional summary statistics by cell type
+  cat("\nCell counts by treatment and cell type:\n")
+  for (celltype_name in names(statistical_results)) {
+    result <- statistical_results[[celltype_name]]
+    if (!is.null(result$summary_stats)) {
+      cat("\n", celltype_name, ":\n")
+      treatment_counts <- result$summary_stats[, c("treatment", "n_cells")]
+      print(treatment_counts)
+    }
+  }
+  
+  # Summary of biological significance filtering
+  total_comparisons <- nrow(detailed_pairwise)
+  cat("\n=== BIOLOGICAL SIGNIFICANCE SUMMARY ===\n")
+  cat("Comparisons passing both statistical (p<0.05) and biological (|log2FC|>1.25) significance:", total_comparisons, "\n")
+  cat("Biological significance threshold: |log2FC| > 1.25 (equivalent to >2.38-fold change)\n")
+  cat("This filtering removes statistically significant but biologically irrelevant differences.\n")
+  
+} else {
+  cat("No statistical results to process.\n")
+}        
+                     
