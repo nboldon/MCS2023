@@ -1,0 +1,168 @@
+library(purrr)
+library(dplyr)
+
+# Function to safely read CSV files and extract metadata from filename
+safe_read_csv <- function(file_path, file_name) {
+  tryCatch({
+    # Use read.csv with more robust reading options
+    df <- read.csv(file_path, 
+                   fileEncoding = "UTF-8", 
+                   check.names = FALSE, 
+                   stringsAsFactors = FALSE,
+                   na.strings = c("", "NA", "N/A"))
+    
+    # Extract metadata from filename even for empty files
+    # Pattern: celltype_t#vst#_Motif_FDR-0-1_2025-06-09
+    base_name <- tools::file_path_sans_ext(file_name)
+    
+    # Remove the date and motif pattern to get the comparison part
+    # Split by "_Motif_FDR"
+    motif_pattern <- "_Motif_FDR"
+    motif_pos <- regexpr(motif_pattern, base_name)
+    
+    if (motif_pos > 0) {
+      comparison_part <- substr(base_name, 1, motif_pos - 1)
+    } else {
+      comparison_part <- base_name
+    }
+    
+    # Split into parts and find treatment comparison
+    parts <- strsplit(comparison_part, "_")[[1]]
+    
+    # Find the part that looks like t#vst#
+    treatment_pattern <- "^t\\d+vst\\d+$"
+    treatment_idx <- which(grepl(treatment_pattern, parts))
+    
+    if (length(treatment_idx) > 0) {
+      # Everything before the treatment comparison is the cell type
+      cell_type <- paste(parts[1:(treatment_idx - 1)], collapse = "_")
+      treatment_comparison <- parts[treatment_idx]
+    } else {
+      # Fallback
+      cell_type <- paste(parts[1:(length(parts) - 1)], collapse = "_")
+      treatment_comparison <- parts[length(parts)]
+    }
+    
+    # Check if dataframe is empty but still create a placeholder row
+    if (nrow(df) == 0) {
+      cat("File is empty:", file_name, "- creating placeholder entry\n")
+      # Create a single row with NA values to preserve the file info
+      df <- data.frame(
+        group = NA,
+        group_name = NA,
+        seqnames = NA,
+        idx = NA,
+        name = NA,
+        FDR = NA,
+        MeanDiff = NA,
+        stringsAsFactors = FALSE
+      )
+    }
+    
+    # Add metadata columns
+    df$source_file <- file_name
+    df$cell_type <- cell_type
+    df$treatment_comparison <- treatment_comparison
+    df$comparison <- comparison_part
+    
+    cat("Read", nrow(df), "rows from", cell_type, "-", treatment_comparison, "\n")
+    
+    return(df)
+  }, 
+  error = function(e) {
+    warning(paste("Error reading file:", file_name, "-", e$message))
+    return(NULL)
+  },
+  warning = function(w) {
+    warning(paste("Warning with file:", file_name, "-", w$message))
+    return(NULL)
+  })
+}
+
+# Set the directory path where your CSV files are located
+directory <- "/Volumes/DataBox/ProjMCS7"  # Update this if your files are in a different directory
+
+# Create a list of files matching the current pattern (2025-06-09 date)
+file_list <- list.files(path = directory, 
+                        pattern = "*_Motif_FDR-0-1_2025-06-09.csv", 
+                        full.names = TRUE)
+
+# If no files found with 2025 date, try the 2024 pattern
+if (length(file_list) == 0) {
+  file_list <- list.files(path = directory, 
+                          pattern = "*_Motif_FDR-0-1_2024-09-09.csv", 
+                          full.names = TRUE)
+}
+
+# Print found files
+cat("Found", length(file_list), "motif files:\n")
+if (length(file_list) > 0) {
+  for (file in file_list) {
+    cat("  ", basename(file), "\n")
+  }
+} else {
+  cat("No files found. Checking available CSV files in directory:\n")
+  all_csv <- list.files(path = directory, pattern = "\\.csv$")
+  print(head(all_csv, 10))
+  stop("No matching motif files found")
+}
+
+# Remove any temporary or system files
+file_list <- file_list[!grepl("^~\\$", basename(file_list))]
+
+# Read and combine the files
+cat("\nReading files...\n")
+combined_data <- map2(file_list, 
+                      tools::file_path_sans_ext(basename(file_list)), 
+                      safe_read_csv)
+
+# Remove NULL entries
+combined_data <- compact(combined_data)
+
+# Combine the dataframes
+if (length(combined_data) > 0) {
+  cat("\nCombining", length(combined_data), "files...\n")
+  final_combined_df <- bind_rows(combined_data)
+  
+  # Write to a file
+  write.csv(final_combined_df, "combined_motif_data.csv", row.names = FALSE)
+  
+  cat("\n=== SUMMARY ===\n")
+  cat("Combined motif data saved to: combined_motif_data.csv\n")
+  cat("Total rows:", nrow(final_combined_df), "\n")
+  cat("Total files processed:", length(combined_data), "\n")
+  
+  # Summary by cell type
+  cat("\nCell types found:\n")
+  cell_summary <- final_combined_df %>%
+    group_by(cell_type) %>%
+    summarise(
+      files = n_distinct(source_file),
+      treatment_comparisons = n_distinct(treatment_comparison),
+      total_motifs = n(),
+      .groups = 'drop'
+    )
+  print(cell_summary)
+  
+  # Summary by treatment comparison
+  cat("\nTreatment comparisons found:\n")
+  treatment_summary <- final_combined_df %>%
+    group_by(treatment_comparison) %>%
+    summarise(
+      cell_types = n_distinct(cell_type),
+      total_motifs = n(),
+      .groups = 'drop'
+    )
+  print(treatment_summary)
+  
+  # Sample of the data
+  cat("\nSample of combined data:\n")
+  sample_cols <- c("group", "name", "FDR", "cell_type", "treatment_comparison")
+  available_cols <- intersect(sample_cols, colnames(final_combined_df))
+  print(head(final_combined_df[, available_cols]))
+  
+  cat("\nReady to run GO/KEGG analysis script!\n")
+  
+} else {
+  stop("No files could be read successfully")
+}
