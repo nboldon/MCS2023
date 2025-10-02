@@ -1,0 +1,204 @@
+# Load libraries
+library(ArchR)
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+library(clusterProfiler)
+library(enrichplot)
+library(pheatmap)
+
+# Additional setup
+setwd("/Volumes/DataBox/ProjMCS7")
+addArchRGenome("mm10")
+addArchRThreads(threads = 16)
+
+# Load project
+projMCS7 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS7", force = FALSE)
+getAvailableMatrices(projMCS7)
+
+
+
+
+# Add cell type annotations to projMCS7 (based on your cluster mapping)
+celltype <- projMCS7$Clusters
+celltype[celltype=="C1"] <- "astrocyte"
+celltype[celltype=="C2"] <- "oligodendrocyte"
+celltype[celltype=="C3"] <- "oligodendrocyte"
+celltype[celltype=="C4"] <- "glutamatergic"
+celltype[celltype=="C5"] <- "oligodendrocyte"
+celltype[celltype=="C6"] <- "oligodendrocyte_precursor"
+celltype[celltype=="C7"] <- "astrocyte"
+celltype[celltype=="C8"] <- "astrocyte"
+celltype[celltype=="C9"] <- "astrocyte"
+celltype[celltype=="C10"] <- "microglia"
+celltype[celltype=="C11"] <- "microglia"
+celltype[celltype=="C12"] <- "endo-vasc"
+celltype[celltype=="C13"] <- "glutamatergic"
+celltype[celltype=="C14"] <- "endo_vasc"
+celltype[celltype=="C15"] <- "glutamatergic"
+celltype[celltype=="C16"] <- "glutamatergic"
+celltype[celltype=="C17"] <- "glutamatergic"
+celltype[celltype=="C18"] <- "glutamatergic"
+celltype[celltype=="C19"] <- "glutamatergic"
+celltype[celltype=="C20"] <- "glutamatergic"
+celltype[celltype=="C21"] <- "glutamatergic"
+celltype[celltype=="C22"] <- "GABAergic"
+celltype[celltype=="C23"] <- "GABAergic"
+celltype[celltype=="C24"] <- "glutamatergic"
+celltype[celltype=="C25"] <- "glutamatergic"
+
+# Check that the only entries in this object are the defined cell types now
+unique(celltype)
+projMCS7$celltype <- celltype
+
+# Add treatment mapping to the main project
+treatment_mapping <- list(
+  "t1" = c("C302_", "C306_", "C309_", "C318_", "C323_", "C328_", "C332_", "C337_", "C339_", "C346_", "C351_", "C353_", "C360_"),
+  "t2" = c("C304_", "C308_", "C312_", "C349_", "C315_", "C321_", "C324_", "C355_", "C327_", "C330_", "C333_", "C358_", "C336_", "C342_", "C348_", "C362_"),
+  "t3" = c("C305_", "C307_", "C313_", "C350_", "C316_", "C320_", "C322_", "C352_", "C325_", "C334_", "C359_", "C340_", "C341_", "C345_", "C364_"),
+  "t4" = c("C301_", "C303_", "C310_", "C314_", "C319_", "C335_", "C338_", "C344_", "C354_", "C356_", "C361_", "C363_")
+)
+
+# Map treatment to the main project
+treatment <- projMCS7$Sample
+for (treatment_key in names(treatment_mapping)) {
+  for (pattern in treatment_mapping[[treatment_key]]) {
+    treatment <- gsub(pattern, treatment_key, treatment)
+  }
+}
+projMCS7$treatment <- treatment
+
+# Check motif annotations and background peaks
+if("Motif" %ni% names(projMCS7@peakAnnotation)){
+  projMCS7 <- addMotifAnnotations(ArchRProj = projMCS7, motifSet = "cisbp", name = "Motif")
+}
+
+# Add background peaks - use tryCatch to handle if they already exist
+tryCatch({
+  projMCS7 <- addBgdPeaks(projMCS7)
+  print("Background peaks added successfully")
+}, error = function(e) {
+  if(grepl("Background Peaks Already Exist", e$message)) {
+    print("Background peaks already exist, skipping addBgdPeaks")
+  } else {
+    stop(e)  # Re-throw if it's a different error
+  }
+})
+
+# Add deviations matrix
+if(!"MotifMatrix" %in% getAvailableMatrices(projMCS7)){
+  projMCS7 <- addDeviationsMatrix(
+    ArchRProj = projMCS7,
+    peakAnnotation = "Motif"
+  )
+} else {
+  print("MotifMatrix already exists, skipping addDeviationsMatrix")
+}
+
+################################################################################################################
+# Loop for all cell types instead of clusters
+################################################################################################################
+
+# Define the list of cell types
+cell_types <- unique(projMCS7$celltype)
+print(paste("Cell types found:", paste(cell_types, collapse = ", ")))
+
+# Define treatment pairs for comparison
+treatment_pairs <- list(
+  c("t1", "t2"),
+  c("t1", "t3"),
+  c("t1", "t4"),
+  c("t2", "t1"),
+  c("t2", "t3"),
+  c("t2", "t4"),
+  c("t3", "t1"),
+  c("t3", "t2"),
+  c("t3", "t4"),
+  c("t4", "t1"),
+  c("t4", "t2"),
+  c("t4", "t3")
+)
+
+# Iterate through all cell types
+for (cell_type in cell_types) {
+  print(paste("Processing cell type:", cell_type))
+  
+  # Subset by cell type
+  archRSubset <- projMCS7[projMCS7$celltype %in% cell_type]
+  
+  # Check if we have enough cells for analysis
+  if (length(archRSubset$cellNames) < 10) {
+    print(paste("Skipping", cell_type, "- insufficient cells (", length(archRSubset$cellNames), ")"))
+    next
+  }
+  
+  # Check treatment distribution in this cell type
+  treatment_counts <- table(archRSubset$treatment)
+  print(paste("Treatment distribution in", cell_type, ":"))
+  print(treatment_counts)
+  
+  # Skip if any treatment has fewer than 5 cells
+  if (any(treatment_counts < 5)) {
+    print(paste("Skipping", cell_type, "- insufficient cells in some treatments"))
+    next
+  }
+  
+  # Use MAGIC to impute gene scores by smoothing signal across nearby cells
+  # Check if IterativeLSI2 exists, if not use IterativeLSI
+  if ("IterativeLSI2" %in% names(archRSubset@reducedDims)) {
+    archRSubset <- addImputeWeights(archRSubset, reducedDims = "IterativeLSI2")
+  } else if ("IterativeLSI" %in% names(archRSubset@reducedDims)) {
+    archRSubset <- addImputeWeights(archRSubset, reducedDims = "IterativeLSI")
+  } else {
+    print(paste("Warning: No suitable reduced dimensions found for", cell_type, ". Skipping impute weights."))
+  }
+  
+  # Iterate through treatment pairs
+  for (pair in treatment_pairs) {
+    useGroup <- pair[1]
+    bgdGroup <- pair[2]
+    
+    # Check if both treatments exist in this cell type
+    if (!(useGroup %in% names(treatment_counts)) || !(bgdGroup %in% names(treatment_counts))) {
+      print(paste("Skipping comparison", useGroup, "vs", bgdGroup, "in", cell_type, "- missing treatment group"))
+      next
+    }
+    
+    # Check if both groups have sufficient cells
+    if (treatment_counts[useGroup] < 5 || treatment_counts[bgdGroup] < 5) {
+      print(paste("Skipping comparison", useGroup, "vs", bgdGroup, "in", cell_type, "- insufficient cells"))
+      next
+    }
+    
+    print(paste("Running comparison:", useGroup, "vs", bgdGroup, "in", cell_type))
+    
+    # Get marker features
+    tryCatch({
+      markerFeatures <- getMarkerFeatures(
+        ArchRProj = archRSubset,
+        useMatrix = "MotifMatrix",
+        groupBy = "treatment",
+        testMethod = "wilcoxon",
+        bias = c("TSSEnrichment", "log10(nFrags)"),
+        useGroups = useGroup,
+        bgdGroups = bgdGroup
+      )
+      
+      # Get the list of markers
+      markerList <- getMarkers(markerFeatures, cutOff = "FDR <= 0.1")
+      
+      # Define file name (replace spaces and special characters in cell type name)
+      clean_cell_type <- gsub("[^A-Za-z0-9]", "_", cell_type)
+      file_name <- paste0(clean_cell_type, "_", useGroup, "vs", bgdGroup, "_Motif_FDR-0-1_2025-06-09.csv")
+      
+      # Write markerList to a CSV file
+      write.csv(markerList, file = file_name, row.names = FALSE)
+      
+      print(paste("Successfully saved:", file_name))
+      
+    }, error = function(e) {
+      print(paste("Error in comparison", useGroup, "vs", bgdGroup, "in", cell_type, ":", e$message))
+    })
+  }
+}
+
+print("Analysis complete!")
