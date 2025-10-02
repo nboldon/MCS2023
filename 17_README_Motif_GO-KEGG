@@ -4,6 +4,9 @@
 Subsets treatment groups by cluster
 Applies GO and KEGG analysis to results
 
+# 17_Combine_Motif_CellType_PairwiseComps
+Combines motif cell type pairwise comparisons into a single document 
+
 # 17_Motif_GO-KEGG_Cluster-CellType_ResultsComp
 Comprehensive Comparison of Cluster-based vs Cell Type-based Motif Enrichment Results
 
