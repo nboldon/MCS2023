@@ -1,0 +1,945 @@
+# COMPLETE GO/KEGG ENRICHMENT ANALYSIS FOR DA GENES
+# All-in-one script for neurodevelopment, Down syndrome, cognition, memory, and learning analysis
+# Updated with viridis colors, sample tracking, and Excel-safe formatting
+
+# ============================================================================
+# PACKAGE INSTALLATION AND LOADING
+# ============================================================================
+
+# Install required packages if not already installed
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+required_packages <- c("clusterProfiler", "org.Mm.eg.db", "DOSE", 
+                       "enrichplot", "ggplot2", "dplyr", "readr",
+                       "VennDiagram", "UpSetR", "viridis")
+
+for (pkg in required_packages) {
+  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
+    if (pkg %in% c("clusterProfiler", "org.Mm.eg.db", "DOSE", "enrichplot")) {
+      BiocManager::install(pkg)
+    } else {
+      install.packages(pkg)
+    }
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# Load all libraries
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(DOSE)
+library(enrichplot)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(VennDiagram)
+library(UpSetR)
+library(viridis)
+
+# ============================================================================
+# DATA LOADING AND INITIAL SETUP
+# ============================================================================
+
+# Read the data
+cat("=== LOADING DATA ===\n")
+data <- read_csv("Appendix_File-14-C18.csv")
+
+# Apply custom treatment group assignments
+cat("=== APPLYING CUSTOM TREATMENT GROUP ASSIGNMENTS ===\n")
+treatment <- data$group_name
+treatment <- gsub("C302_", "t1", treatment)
+treatment <- gsub("C306_", "t1", treatment)
+treatment <- gsub("C309_", "t1", treatment)
+treatment <- gsub("C318_", "t1", treatment)
+treatment <- gsub("C323_", "t1", treatment)
+treatment <- gsub("C328_", "t1", treatment)
+treatment <- gsub("C332_", "t1", treatment)
+treatment <- gsub("C337_", "t1", treatment)
+treatment <- gsub("C339_", "t1", treatment)
+treatment <- gsub("C346_", "t1", treatment)
+treatment <- gsub("C351_", "t1", treatment)
+treatment <- gsub("C353_", "t1", treatment)
+treatment <- gsub("C360_", "t1", treatment)
+treatment <- gsub("C304_", "t2", treatment)
+treatment <- gsub("C308_", "t2", treatment)
+treatment <- gsub("C312_", "t2", treatment)
+treatment <- gsub("C349_", "t2", treatment)
+treatment <- gsub("C315_", "t2", treatment)
+treatment <- gsub("C321_", "t2", treatment)
+treatment <- gsub("C324_", "t2", treatment)
+treatment <- gsub("C355_", "t2", treatment)
+treatment <- gsub("C327_", "t2", treatment)
+treatment <- gsub("C330_", "t2", treatment)
+treatment <- gsub("C333_", "t2", treatment)
+treatment <- gsub("C358_", "t2", treatment)
+treatment <- gsub("C336_", "t2", treatment)
+treatment <- gsub("C342_", "t2", treatment)
+treatment <- gsub("C348_", "t2", treatment)
+treatment <- gsub("C362_", "t2", treatment)
+treatment <- gsub("C305_", "t3", treatment)
+treatment <- gsub("C307_", "t3", treatment)
+treatment <- gsub("C313_", "t3", treatment)
+treatment <- gsub("C350_", "t3", treatment)
+treatment <- gsub("C316_", "t3", treatment)
+treatment <- gsub("C320_", "t3", treatment)
+treatment <- gsub("C322_", "t3", treatment)
+treatment <- gsub("C352_", "t3", treatment)
+treatment <- gsub("C325_", "t3", treatment)
+treatment <- gsub("C334_", "t3", treatment)
+treatment <- gsub("C359_", "t3", treatment)
+treatment <- gsub("C340_", "t3", treatment)
+treatment <- gsub("C341_", "t3", treatment)
+treatment <- gsub("C345_", "t3", treatment)
+treatment <- gsub("C364_", "t3", treatment)
+treatment <- gsub("C301_", "t4", treatment)
+treatment <- gsub("C303_", "t4", treatment)
+treatment <- gsub("C310_", "t4", treatment)
+treatment <- gsub("C314_", "t4", treatment)
+treatment <- gsub("C319_", "t4", treatment)
+treatment <- gsub("C335_", "t4", treatment)
+treatment <- gsub("C338_", "t4", treatment)
+treatment <- gsub("C344_", "t4", treatment)
+treatment <- gsub("C354_", "t4", treatment)
+treatment <- gsub("C356_", "t4", treatment)
+treatment <- gsub("C361_", "t4", treatment)
+treatment <- gsub("C363_", "t4", treatment)
+
+# Replace the group column with the new treatment assignments
+data$group <- treatment
+
+cat("Data dimensions:", dim(data), "\n")
+cat("Column names:", colnames(data), "\n")
+cat("Unique groups (new assignments):", unique(data$group), "\n")
+cat("Unique group_names:", unique(data$group_name), "\n")
+
+# Define neurodevelopment keyword lists
+neuro_keywords <- list(
+  neurodevelopment = c("neurodevelopment", "neural development", "neurogenesis", 
+                       "neural tube", "brain development", "nervous system development"),
+  
+  down_syndrome = c("down syndrome", "trisomy 21", "chromosome 21", "ds", 
+                    "intellectual disability", "developmental disability"),
+  
+  cognition = c("cognition", "cognitive", "executive function", "working memory",
+                "attention", "processing speed", "cognitive flexibility"),
+  
+  memory = c("memory", "hippocampus", "long-term memory", "short-term memory",
+             "spatial memory", "episodic memory", "memory consolidation",
+             "memory formation", "synaptic plasticity"),
+  
+  learning = c("learning", "learning and memory", "associative learning",
+               "motor learning", "fear conditioning", "spatial learning",
+               "behavioral learning", "skill learning"),
+  
+  synaptic = c("synapse", "synaptic", "neurotransmitter", "synaptic transmission",
+               "synaptic plasticity", "postsynaptic", "presynaptic", "dendritic spine"),
+  
+  neural_pathways = c("dopaminergic", "cholinergic", "GABAergic", "glutamatergic",
+                      "serotonergic", "noradrenergic", "neural pathway", "neural circuit")
+)
+
+# ============================================================================
+# GENE OVERLAP ANALYSIS FUNCTIONS
+# ============================================================================
+
+analyze_gene_overlap <- function(data) {
+  
+  cat("\n=== GENE OVERLAP ANALYSIS BY SAMPLES (group_name) ===\n")
+  
+  gene_by_sample <- split(data$name, data$group_name)
+  
+  # Count overlaps between samples
+  sample_overlaps <- list()
+  sample_names <- names(gene_by_sample)
+  
+  for (i in 1:(length(sample_names)-1)) {
+    for (j in (i+1):length(sample_names)) {
+      overlap <- intersect(gene_by_sample[[i]], gene_by_sample[[j]])
+      sample_overlaps[[paste(sample_names[i], "vs", sample_names[j])]] <- length(overlap)
+      cat(sprintf("%s vs %s: %d shared genes\n", 
+                  sample_names[i], sample_names[j], length(overlap)))
+    }
+  }
+  
+  cat("\n=== GENE OVERLAP ANALYSIS BY TREATMENT GROUPS ===\n")
+  
+  gene_by_treatment <- split(data$name, data$group)
+  
+  # Count overlaps between treatment groups
+  treatment_overlaps <- list()
+  treatment_names <- names(gene_by_treatment)
+  
+  for (i in 1:(length(treatment_names)-1)) {
+    for (j in (i+1):length(treatment_names)) {
+      overlap <- intersect(gene_by_treatment[[i]], gene_by_treatment[[j]])
+      treatment_overlaps[[paste(treatment_names[i], "vs", treatment_names[j])]] <- length(overlap)
+      cat(sprintf("%s vs %s: %d shared genes\n", 
+                  treatment_names[i], treatment_names[j], length(overlap)))
+    }
+  }
+  
+  # Create Venn diagrams if 2-3 groups
+  if (length(gene_by_treatment) <= 3 & length(gene_by_treatment) >= 2) {
+    venn.diagram(
+      x = gene_by_treatment,
+      category.names = names(gene_by_treatment),
+      filename = "treatment_groups_venn.png",
+      output = TRUE,
+      imagetype = "png",
+      height = 480,
+      width = 480,
+      resolution = 300,
+      compression = "lzw",
+      lwd = 2,
+      col = rainbow(length(gene_by_treatment)),
+      fill = rainbow(length(gene_by_treatment), alpha = 0.3),
+      cex = 1.5,
+      fontface = "bold",
+      fontfamily = "sans"
+    )
+    cat("Venn diagram saved as 'treatment_groups_venn.png'\n")
+  }
+  
+  # UpSet plot for complex overlaps
+  if (length(gene_by_treatment) > 1) {
+    upset_data <- fromList(gene_by_treatment)
+    
+    png("treatment_upset_plot.png", width = 800, height = 600, res = 300)
+    upset(upset_data, 
+          sets = names(gene_by_treatment),
+          order.by = "freq",
+          main.bar.color = "steelblue",
+          sets.bar.color = "darkgreen")
+    dev.off()
+    cat("UpSet plot saved as 'treatment_upset_plot.png'\n")
+  }
+  
+  return(list(sample_overlaps = sample_overlaps, 
+              treatment_overlaps = treatment_overlaps,
+              gene_by_sample = gene_by_sample,
+              gene_by_treatment = gene_by_treatment))
+}
+
+# ============================================================================
+# GENE-SAMPLE MAPPING FUNCTION
+# ============================================================================
+
+create_gene_sample_summary <- function(data) {
+  
+  cat("\n=== CREATING GENE-SAMPLE MAPPING TABLE ===\n")
+  
+  gene_sample_summary <- data %>%
+    group_by(name) %>%
+    summarise(
+      samples = paste(unique(group_name), collapse = "; "),
+      treatment_groups = paste(unique(group), collapse = "; "),
+      n_samples = n_distinct(group_name),
+      n_treatment_groups = n_distinct(group),
+      mean_log2fc = round(mean(Log2FC, na.rm = TRUE), 3),
+      min_log2fc = round(min(Log2FC, na.rm = TRUE), 3),
+      max_log2fc = round(max(Log2FC, na.rm = TRUE), 3),
+      mean_fdr = round(mean(FDR, na.rm = TRUE), 6),
+      min_fdr = round(min(FDR, na.rm = TRUE), 6),
+      chromosome = paste(unique(seqnames), collapse = "; "),
+      .groups = 'drop'
+    ) %>%
+    arrange(desc(n_samples), desc(n_treatment_groups))
+  
+  write.csv(gene_sample_summary, "gene_sample_mapping_summary.csv", row.names = FALSE)
+  
+  cat(sprintf("Gene-sample mapping saved to: gene_sample_mapping_summary.csv\n"))
+  cat(sprintf("Total unique genes: %d\n", nrow(gene_sample_summary)))
+  cat(sprintf("- Genes found in multiple samples: %d\n", 
+              sum(gene_sample_summary$n_samples > 1)))
+  cat(sprintf("- Genes found in multiple treatment groups: %d\n", 
+              sum(gene_sample_summary$n_treatment_groups > 1)))
+  
+  return(gene_sample_summary)
+}
+
+# ============================================================================
+# ENRICHMENT ANALYSIS FUNCTIONS
+# ============================================================================
+
+perform_enrichment_analysis <- function(gene_list, analysis_name = "genes", sample_info = NULL) {
+  
+  cat(sprintf("\n=== ENRICHMENT ANALYSIS FOR %s ===\n", toupper(analysis_name)))
+  cat(sprintf("Number of input genes: %d\n", length(gene_list)))
+  cat("Note: 'Count' in results = number of your genes annotated to each term\n")
+  cat("      'GeneRatio' = your genes / total genes in that term\n")
+  
+  # Convert gene symbols to Entrez IDs
+  gene_entrez <- bitr(gene_list, 
+                      fromType = "SYMBOL",
+                      toType = "ENTREZID", 
+                      OrgDb = org.Mm.eg.db)
+  
+  cat(sprintf("Successfully mapped %d genes to Entrez IDs\n", nrow(gene_entrez)))
+  
+  if (nrow(gene_entrez) < 5) {
+    cat("Warning: Too few genes mapped for meaningful analysis\n")
+    return(NULL)
+  }
+  
+  entrez_ids <- gene_entrez$ENTREZID
+  
+  # GO Enrichment Analysis
+  cat("\nPerforming GO enrichment analysis...\n")
+  
+  go_bp <- enrichGO(gene = entrez_ids,
+                    OrgDb = org.Mm.eg.db,
+                    ont = "BP",
+                    pAdjustMethod = "BH",
+                    pvalueCutoff = 0.05,
+                    qvalueCutoff = 0.2,
+                    readable = TRUE)
+  
+  go_mf <- enrichGO(gene = entrez_ids,
+                    OrgDb = org.Mm.eg.db,
+                    ont = "MF",
+                    pAdjustMethod = "BH",
+                    pvalueCutoff = 0.05,
+                    qvalueCutoff = 0.2,
+                    readable = TRUE)
+  
+  go_cc <- enrichGO(gene = entrez_ids,
+                    OrgDb = org.Mm.eg.db,
+                    ont = "CC",
+                    pAdjustMethod = "BH",
+                    pvalueCutoff = 0.05,
+                    qvalueCutoff = 0.2,
+                    readable = TRUE)
+  
+  # KEGG Pathway Analysis
+  cat("Performing KEGG pathway analysis...\n")
+  kegg_result <- enrichKEGG(gene = entrez_ids,
+                            organism = 'mmu',
+                            pvalueCutoff = 0.05,
+                            qvalueCutoff = 0.2)
+  
+  # Disease Ontology with error handling
+  cat("Performing Disease Ontology analysis...\n")
+  do_result <- tryCatch({
+    enrichDO(gene = entrez_ids,
+             ont = "DO",
+             pvalueCutoff = 0.05,
+             qvalueCutoff = 0.2,
+             readable = TRUE)
+  }, error = function(e) {
+    cat("Note: Disease Ontology analysis failed - this is common and not concerning\n")
+    return(NULL)
+  })
+  
+  # Filter for neurodevelopment-related terms
+  all_neuro_keywords <- unlist(neuro_keywords)
+  pattern <- paste(all_neuro_keywords, collapse = "|")
+  
+  filter_neuro_results <- function(result) {
+    if (is.null(result) || nrow(result) == 0) return(NULL)
+    result_df <- as.data.frame(result)
+    filtered <- result_df[grepl(pattern, result_df$Description, ignore.case = TRUE), ]
+    return(if(nrow(filtered) > 0) filtered else NULL)
+  }
+  
+  neuro_go_bp <- filter_neuro_results(go_bp)
+  neuro_kegg <- filter_neuro_results(kegg_result)
+  neuro_do <- filter_neuro_results(do_result)
+  
+  # Print neurodevelopment results
+  if (!is.null(neuro_go_bp)) {
+    cat("\nNeurodevelopment-related GO Biological Processes:\n")
+    print(neuro_go_bp[1:min(10, nrow(neuro_go_bp)), c("Description", "pvalue", "qvalue", "Count")])
+  }
+  
+  if (!is.null(neuro_kegg)) {
+    cat("\nNeurodevelopment-related KEGG Pathways:\n")
+    print(neuro_kegg[1:min(10, nrow(neuro_kegg)), c("Description", "pvalue", "qvalue", "Count")])
+  }
+  
+  # Save results with Excel-safe formatting and sample tracking
+  save_enrichment_results <- function(result, filename, sample_info = NULL) {
+    if (!is.null(result) && nrow(result) > 0) {
+      result_df <- as.data.frame(result)
+      
+      # Prevent Excel date conversion
+      if ("GeneRatio" %in% colnames(result_df)) {
+        result_df$GeneRatio <- paste0("'", result_df$GeneRatio)
+      }
+      if ("BgRatio" %in% colnames(result_df)) {
+        result_df$BgRatio <- paste0("'", result_df$BgRatio)
+      }
+      
+      # Add sample information
+      if (!is.null(sample_info)) {
+        gene_sample_map <- sample_info %>%
+          group_by(name) %>%
+          summarise(
+            samples = paste(unique(group_name), collapse = "; "),
+            treatment_groups = paste(unique(group), collapse = "; "),
+            n_samples = n_distinct(group_name),
+            n_treatment_groups = n_distinct(group),
+            .groups = 'drop'
+          )
+        
+        result_df$Genes_with_Sample_Info <- ""
+        for (i in 1:nrow(result_df)) {
+          genes_in_term <- unlist(strsplit(result_df$geneID[i], "/"))
+          gene_details <- sapply(genes_in_term, function(gene) {
+            sample_data <- gene_sample_map[gene_sample_map$name == gene, ]
+            if (nrow(sample_data) > 0) {
+              paste0(gene, " (", sample_data$treatment_groups, ")")
+            } else {
+              gene
+            }
+          })
+          result_df$Genes_with_Sample_Info[i] <- paste(gene_details, collapse = "; ")
+        }
+      }
+      
+      write.csv(result_df, filename, row.names = FALSE)
+      cat(sprintf("Results saved to: %s\n", filename))
+    }
+  }
+  
+  # Save all results
+  save_enrichment_results(go_bp, paste0(analysis_name, "_GO_BP_results.csv"), sample_info)
+  save_enrichment_results(go_mf, paste0(analysis_name, "_GO_MF_results.csv"), sample_info)
+  save_enrichment_results(go_cc, paste0(analysis_name, "_GO_CC_results.csv"), sample_info)
+  save_enrichment_results(kegg_result, paste0(analysis_name, "_KEGG_results.csv"), sample_info)
+  save_enrichment_results(do_result, paste0(analysis_name, "_DO_results.csv"), sample_info)
+  
+  # Create visualizations
+  create_enrichment_plots(go_bp, go_mf, go_cc, kegg_result, do_result, analysis_name)
+  
+  return(list(
+    go_bp = go_bp,
+    go_mf = go_mf,
+    go_cc = go_cc,
+    kegg = kegg_result,
+    do = do_result,
+    neuro_go_bp = neuro_go_bp,
+    neuro_kegg = neuro_kegg,
+    neuro_do = neuro_do
+  ))
+}
+
+# ============================================================================
+# VISUALIZATION FUNCTIONS WITH VIRIDIS
+# ============================================================================
+
+create_enrichment_plots <- function(go_bp, go_mf, go_cc, kegg_result, do_result, analysis_name) {
+  
+  # GO BP plots
+  if (!is.null(go_bp) && nrow(go_bp) > 0) {
+    p1 <- dotplot(go_bp, showCategory = 20) + 
+      scale_color_viridis_c(name = "q-value", option = "plasma", direction = -1) +
+      ggtitle(paste("GO Biological Process -", analysis_name)) +
+      theme_minimal() +
+      theme(axis.text.y = element_text(size = 8))
+    ggsave(paste0(analysis_name, "_GO_BP_dotplot.png"), p1, 
+           width = 12, height = 8, dpi = 300)
+    
+    p2 <- barplot(go_bp, showCategory = 15) + 
+      scale_fill_viridis_c(name = "p.adjust", option = "viridis", direction = -1) +
+      ggtitle(paste("GO Biological Process -", analysis_name)) +
+      theme_minimal()
+    ggsave(paste0(analysis_name, "_GO_BP_barplot.png"), p2, 
+           width = 10, height = 8, dpi = 300)
+  }
+  
+  # KEGG plots
+  if (!is.null(kegg_result) && nrow(kegg_result) > 0) {
+    p3 <- dotplot(kegg_result, showCategory = 20) + 
+      scale_color_viridis_c(name = "q-value", option = "magma", direction = -1) +
+      ggtitle(paste("KEGG Pathways -", analysis_name)) +
+      theme_minimal() +
+      theme(axis.text.y = element_text(size = 8))
+    ggsave(paste0(analysis_name, "_KEGG_dotplot.png"), p3, 
+           width = 12, height = 8, dpi = 300)
+  }
+  
+  # GO MF plots
+  if (!is.null(go_mf) && nrow(go_mf) > 0) {
+    p4 <- dotplot(go_mf, showCategory = 15) + 
+      scale_color_viridis_c(name = "q-value", option = "turbo", direction = -1) +
+      ggtitle(paste("GO Molecular Function -", analysis_name)) +
+      theme_minimal() +
+      theme(axis.text.y = element_text(size = 8))
+    ggsave(paste0(analysis_name, "_GO_MF_dotplot.png"), p4, 
+           width = 12, height = 8, dpi = 300)
+  }
+  
+  cat(sprintf("Viridis-colored plots saved for %s analysis\n", analysis_name))
+}
+
+# ============================================================================
+# DOWN SYNDROME AND INTELLECTUAL DISABILITY GENE ANALYSIS
+# ============================================================================
+
+analyze_ds_genes <- function(gene_list) {
+  
+  # Known chromosome 21 genes
+  chr21_genes <- c("APP", "SOD1", "DYRK1A", "RCAN1", "SYNJ1", "OLIG2", 
+                   "RUNX1", "ETS2", "ERG", "HMGN1", "DSCAM", "KCNJ6", 
+                   "CBS", "CXADR", "SIM2", "TTC3", "GART", "SON")
+  
+  # Intellectual disability genes
+  id_genes <- c("MECP2", "FMR1", "UBE3A", "SHANK3", "NRXN1", "NLGN4X",
+                "CNTNAP2", "ARID1B", "SCN2A", "SYNGAP1", "STXBP1",
+                "PTEN", "TSC1", "TSC2", "NF1", "CACNA1C", "GRIN2B")
+  
+  ds_genes_present <- intersect(gene_list, chr21_genes)
+  id_genes_present <- intersect(gene_list, id_genes)
+  
+  cat("\n=== DOWN SYNDROME AND INTELLECTUAL DISABILITY GENE ANALYSIS ===\n")
+  cat(sprintf("Chromosome 21 genes in dataset: %d out of %d\n", 
+              length(ds_genes_present), length(chr21_genes)))
+  if (length(ds_genes_present) > 0) {
+    cat("Present Chr21 genes:", paste(ds_genes_present, collapse = ", "), "\n")
+  }
+  
+  cat(sprintf("Intellectual disability genes in dataset: %d out of %d\n", 
+              length(id_genes_present), length(id_genes)))
+  if (length(id_genes_present) > 0) {
+    cat("Present ID genes:", paste(id_genes_present, collapse = ", "), "\n")
+  }
+  
+  return(list(chr21_genes = ds_genes_present, id_genes = id_genes_present))
+}
+
+# ============================================================================
+# FOCUSED NEURODEVELOPMENT SEARCH
+# ============================================================================
+
+search_targeted_terms <- function(enrichment_results, keyword_lists) {
+  
+  targeted_results <- list()
+  
+  for (category in names(keyword_lists)) {
+    cat(sprintf("\n=== SEARCHING FOR %s TERMS ===\n", toupper(category)))
+    
+    keywords <- keyword_lists[[category]]
+    pattern <- paste(keywords, collapse = "|")
+    
+    # Search GO BP results
+    if (!is.null(enrichment_results$go_bp) && nrow(enrichment_results$go_bp) > 0) {
+      go_bp_df <- as.data.frame(enrichment_results$go_bp)
+      matched_bp <- go_bp_df[grepl(pattern, go_bp_df$Description, ignore.case = TRUE), ]
+      
+      if (nrow(matched_bp) > 0) {
+        cat(sprintf("Found %d GO Biological Process terms for %s:\n", 
+                    nrow(matched_bp), category))
+        print(matched_bp[, c("Description", "pvalue", "qvalue", "Count")])
+        targeted_results[[paste0(category, "_GO_BP")]] <- matched_bp
+      }
+    }
+    
+    # Search KEGG results
+    if (!is.null(enrichment_results$kegg) && nrow(enrichment_results$kegg) > 0) {
+      kegg_df <- as.data.frame(enrichment_results$kegg)
+      matched_kegg <- kegg_df[grepl(pattern, kegg_df$Description, ignore.case = TRUE), ]
+      
+      if (nrow(matched_kegg) > 0) {
+        cat(sprintf("Found %d KEGG pathway terms for %s:\n", 
+                    nrow(matched_kegg), category))
+        print(matched_kegg[, c("Description", "pvalue", "qvalue", "Count")])
+        targeted_results[[paste0(category, "_KEGG")]] <- matched_kegg
+      }
+    }
+  }
+  
+  return(targeted_results)
+}
+
+create_focused_plots <- function(targeted_results, output_prefix = "neuro_focused") {
+  
+  all_targeted <- data.frame()
+  
+  for (result_name in names(targeted_results)) {
+    if (nrow(targeted_results[[result_name]]) > 0) {
+      temp_df <- targeted_results[[result_name]]
+      temp_df$Category <- result_name
+      temp_df$NegLog10P <- -log10(temp_df$pvalue)
+      
+      # Ensure all data frames have the same essential columns
+      essential_cols <- c("Description", "pvalue", "qvalue", "Count", "Category", "NegLog10P")
+      
+      # Add missing columns with NA if they don't exist
+      for (col in essential_cols) {
+        if (!col %in% colnames(temp_df)) {
+          temp_df[[col]] <- NA
+        }
+      }
+      
+      # Select only the essential columns for plotting
+      temp_df_subset <- temp_df[, essential_cols, drop = FALSE]
+      
+      # Only add rows where we have valid data
+      valid_rows <- !is.na(temp_df_subset$Description) & 
+        !is.na(temp_df_subset$pvalue) & 
+        !is.na(temp_df_subset$Count)
+      
+      if (sum(valid_rows) > 0) {
+        all_targeted <- rbind(all_targeted, temp_df_subset[valid_rows, ])
+      }
+    }
+  }
+  
+  if (nrow(all_targeted) > 0) {
+    # Handle cases where qvalue might be NA
+    all_targeted$qvalue[is.na(all_targeted$qvalue)] <- all_targeted$pvalue[is.na(all_targeted$qvalue)]
+    
+    p1 <- ggplot(all_targeted, aes(x = NegLog10P, y = reorder(Description, NegLog10P))) +
+      geom_point(aes(size = Count, color = Category), alpha = 0.7) +
+      scale_size_continuous(range = c(2, 10)) +
+      scale_color_viridis_d(option = "plasma") +
+      labs(title = "Neurodevelopment and Cognitive-Related Terms",
+           x = "-log10(p-value)",
+           y = "GO/KEGG Terms",
+           size = "Gene Count",
+           color = "Category") +
+      theme_minimal() +
+      theme(axis.text.y = element_text(size = 8),
+            legend.position = "bottom")
+    
+    ggsave(paste0(output_prefix, "_focused_dotplot.png"), p1, 
+           width = 14, height = 10, dpi = 300)
+    
+    cat(sprintf("Focused neurodevelopment plot saved: %s_focused_dotplot.png\n", output_prefix))
+  } else {
+    cat("No targeted results found for visualization\n")
+  }
+  
+  return(all_targeted)
+}
+
+# ============================================================================
+# CREATE GENE REFERENCES
+# ============================================================================
+
+create_gene_references <- function() {
+  
+  chr21_refs <- data.frame(
+    Gene = c("APP", "SOD1", "DYRK1A", "RCAN1", "SYNJ1", "OLIG2", "RUNX1", "ETS2"),
+    Full_Name = c("Amyloid Beta Precursor Protein", "Superoxide Dismutase 1",
+                  "Dual Specificity Tyrosine Phosphorylation Regulated Kinase 1A",
+                  "Regulator Of Calcineurin 1", "Synaptojanin 1",
+                  "Oligodendrocyte Transcription Factor 2", "RUNX Family Transcription Factor 1",
+                  "ETS Proto-Oncogene 2"),
+    Reference = c("Wiseman et al. Nat Rev Neurosci 2015; 16:564-74",
+                  "Brugge et al. Free Radic Biol Med 1999; 27:42-6",
+                  "Arron et al. Nature 2006; 441:595-600",
+                  "Fuentes et al. Hum Mol Genet 2000; 9:1681-90",
+                  "Voronov et al. Proc Natl Acad Sci 2008; 105:9415-20",
+                  "Chakrabarti et al. Development 2010; 137:2177-86",
+                  "Chou et al. Blood 2012; 119:4071-4",
+                  "Wolvetang et al. Hum Mol Genet 2003; 12:2679-90")
+  )
+  
+  id_refs <- data.frame(
+    Gene = c("MECP2", "FMR1", "UBE3A", "SHANK3", "NRXN1", "NLGN4X", "CNTNAP2", "ARID1B"),
+    Full_Name = c("Methyl-CpG Binding Protein 2", "Fragile X Mental Retardation 1",
+                  "Ubiquitin Protein Ligase E3A", "SH3 And Multiple Ankyrin Repeat Domains 3",
+                  "Neurexin 1", "Neuroligin 4 X-Linked", "Contactin Associated Protein 2",
+                  "AT-Rich Interaction Domain 1B"),
+    Condition = c("Rett Syndrome", "Fragile X Syndrome", "Angelman Syndrome",
+                  "Phelan-McDermid Syndrome", "Neurexin-1 deletions", "Autism Spectrum Disorder",
+                  "Cortical dysplasia-focal epilepsy", "Coffin-Siris Syndrome"),
+    Reference = c("Amir et al. Nat Genet 1999; 23:185-8", "Verkerk et al. Cell 1991; 65:905-14",
+                  "Kishino et al. Nat Genet 1997; 15:70-3", "Bonaglia et al. J Med Genet 2001; 38:776-83",
+                  "Rujescu et al. Hum Mol Genet 2009; 18:988-96", "Jamain et al. Nat Genet 2003; 34:27-9",
+                  "Strauss et al. Cell 2006; 125:785-98", "Hoyer et al. Nat Genet 2012; 44:379-80")
+  )
+  
+  write.csv(chr21_refs, "chr21_genes_references.csv", row.names = FALSE)
+  write.csv(id_refs, "intellectual_disability_genes_references.csv", row.names = FALSE)
+  
+  cat("Gene reference files created:\n")
+  cat("- chr21_genes_references.csv\n")
+  cat("- intellectual_disability_genes_references.csv\n")
+}
+
+# ============================================================================
+# RESULTS EXPLANATION
+# ============================================================================
+
+create_results_explanation <- function() {
+  explanation <- "
+EXPLANATION OF ENRICHMENT ANALYSIS RESULTS
+
+## Key Columns:
+- Count: Number of YOUR genes annotated to this term
+- pvalue: Raw statistical significance
+- qvalue: Multiple testing corrected p-value (use < 0.05)
+- GeneRatio: 'Your genes'/'Total genes in term' (Excel-safe format)
+- geneID: Gene symbols in this term separated by '/'
+- Genes_with_Sample_Info: Shows which treatment groups contributed each gene
+
+## Files Generated:
+- *_GO_BP_results.csv: Biological processes
+- *_KEGG_results.csv: Pathways
+- gene_sample_mapping_summary.csv: Complete gene-sample relationships
+- Various PNG plots with viridis colors
+- Gene reference CSV files with literature citations
+
+## Focus Areas:
+Results filtered for neurodevelopment, Down syndrome, cognition, memory, 
+learning, and synaptic function terms.
+"
+  
+  writeLines(explanation, "RESULTS_EXPLANATION.txt")
+  cat("Results explanation saved to: RESULTS_EXPLANATION.txt\n")
+}
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+cat("=== STARTING COMPLETE ANALYSIS ===\n")
+
+# 1. Gene overlap analysis
+overlap_results <- analyze_gene_overlap(data)
+
+# 2. Create gene-sample mapping
+gene_sample_mapping <- create_gene_sample_summary(data)
+
+# 3. Get all unique genes
+all_genes <- unique(data$name)
+cat(sprintf("\nTotal unique genes across all samples: %d\n", length(all_genes)))
+
+# 4. Analyze known DS/ID genes
+ds_analysis <- analyze_ds_genes(all_genes)
+
+# 5. Enrichment analysis for all genes
+cat("\n=== RUNNING ENRICHMENT ANALYSIS FOR ALL GENES ===\n")
+all_genes_enrichment <- perform_enrichment_analysis(all_genes, 
+                                                    analysis_name = "all_genes",
+                                                    sample_info = data)
+
+# 6. Enrichment analysis for each treatment group
+cat("\n=== RUNNING ENRICHMENT ANALYSIS FOR TREATMENT GROUPS ===\n")
+treatment_enrichments <- list()
+for (group_name in names(overlap_results$gene_by_treatment)) {
+  genes <- overlap_results$gene_by_treatment[[group_name]]
+  if (length(genes) >= 5) {
+    group_data <- data[data$group == group_name, ]
+    cat(sprintf("\nAnalyzing treatment group: %s (%d genes)\n", group_name, length(genes)))
+    treatment_enrichments[[group_name]] <- 
+      perform_enrichment_analysis(genes, 
+                                  analysis_name = paste0("treatment_", group_name),
+                                  sample_info = group_data)
+  } else {
+    cat(sprintf("Skipping %s: too few genes (%d)\n", group_name, length(genes)))
+  }
+}
+
+# 7. Enrichment analysis for each sample (if enough genes)
+cat("\n=== RUNNING ENRICHMENT ANALYSIS FOR INDIVIDUAL SAMPLES ===\n")
+sample_enrichments <- list()
+for (sample_name in names(overlap_results$gene_by_sample)) {
+  genes <- overlap_results$gene_by_sample[[sample_name]]
+  if (length(genes) >= 5) {
+    sample_data <- data[data$group_name == sample_name, ]
+    cat(sprintf("\nAnalyzing sample: %s (%d genes)\n", sample_name, length(genes)))
+    sample_enrichments[[sample_name]] <- 
+      perform_enrichment_analysis(genes, 
+                                  analysis_name = paste0("sample_", sample_name),
+                                  sample_info = sample_data)
+  } else {
+    cat(sprintf("Skipping %s: too few genes (%d)\n", sample_name, length(genes)))
+  }
+}
+
+# 8. Focused neurodevelopment analysis
+cat("\n=== RUNNING FOCUSED NEURODEVELOPMENT ANALYSIS ===\n")
+
+# Search for targeted terms in all genes
+if (!is.null(all_genes_enrichment)) {
+  cat("\nSearching for neurodevelopment terms in ALL GENES results:\n")
+  all_genes_targeted <- search_targeted_terms(all_genes_enrichment, neuro_keywords)
+  
+  if (length(all_genes_targeted) > 0) {
+    all_genes_focused_plots <- create_focused_plots(all_genes_targeted, "all_genes_focused")
+  } else {
+    cat("No neurodevelopment-related terms found in all genes analysis\n")
+  }
+}
+
+# Search for targeted terms in treatment groups
+cat("\nSearching for neurodevelopment terms in TREATMENT GROUP results:\n")
+treatment_targeted_results <- list()
+
+for (treatment_name in names(treatment_enrichments)) {
+  cat(sprintf("\n--- Analyzing treatment group: %s ---\n", treatment_name))
+  
+  treatment_targeted <- search_targeted_terms(treatment_enrichments[[treatment_name]], neuro_keywords)
+  
+  if (length(treatment_targeted) > 0) {
+    treatment_targeted_results[[treatment_name]] <- treatment_targeted
+    treatment_plots <- create_focused_plots(treatment_targeted, 
+                                            paste0("treatment_", treatment_name, "_focused"))
+  } else {
+    cat(sprintf("No neurodevelopment-related terms found for %s\n", treatment_name))
+  }
+}
+
+# 9. Create gene references and documentation
+create_gene_references()
+create_results_explanation()
+
+# ============================================================================
+# COMPREHENSIVE SUMMARY
+# ============================================================================
+
+cat("\n", paste(rep("=", 80), collapse=""), "\n")
+cat("=== COMPREHENSIVE ANALYSIS SUMMARY ===\n")
+cat(paste(rep("=", 80), collapse=""), "\n")
+
+# Data summary
+cat("\nDATA SUMMARY:\n")
+cat(sprintf("- Total rows in dataset: %d\n", nrow(data)))
+cat(sprintf("- Total unique genes: %d\n", length(all_genes)))
+cat(sprintf("- Number of samples (group_name): %d\n", length(unique(data$group_name))))
+cat(sprintf("- Number of treatment groups: %d\n", length(unique(data$group))))
+
+# Gene overlap summary
+cat("\nGENE OVERLAP SUMMARY:\n")
+if (exists("gene_sample_mapping")) {
+  multi_sample_genes <- sum(gene_sample_mapping$n_samples > 1)
+  multi_treatment_genes <- sum(gene_sample_mapping$n_treatment_groups > 1)
+  max_samples <- max(gene_sample_mapping$n_samples)
+  
+  cat(sprintf("- Genes appearing in multiple samples: %d (%.1f%%)\n", 
+              multi_sample_genes, (multi_sample_genes/nrow(gene_sample_mapping))*100))
+  cat(sprintf("- Genes appearing in multiple treatment groups: %d (%.1f%%)\n", 
+              multi_treatment_genes, (multi_treatment_genes/nrow(gene_sample_mapping))*100))
+  cat(sprintf("- Maximum samples per gene: %d\n", max_samples))
+}
+
+# Known gene analysis summary
+cat("\nKNOWN GENE ANALYSIS:\n")
+cat(sprintf("- Chromosome 21 genes found: %d\n", length(ds_analysis$chr21_genes)))
+if (length(ds_analysis$chr21_genes) > 0) {
+  cat(sprintf("  Chr21 genes: %s\n", paste(ds_analysis$chr21_genes, collapse = ", ")))
+}
+cat(sprintf("- Intellectual disability genes found: %d\n", length(ds_analysis$id_genes)))
+if (length(ds_analysis$id_genes) > 0) {
+  cat(sprintf("  ID genes: %s\n", paste(ds_analysis$id_genes, collapse = ", ")))
+}
+
+# Enrichment analysis summary
+cat("\nENRICHMENT ANALYSIS SUMMARY:\n")
+if (!is.null(all_genes_enrichment)) {
+  if (!is.null(all_genes_enrichment$go_bp) && nrow(all_genes_enrichment$go_bp) > 0) {
+    cat(sprintf("- GO Biological Process terms (all genes): %d\n", nrow(all_genes_enrichment$go_bp)))
+  }
+  if (!is.null(all_genes_enrichment$kegg) && nrow(all_genes_enrichment$kegg) > 0) {
+    cat(sprintf("- KEGG pathways (all genes): %d\n", nrow(all_genes_enrichment$kegg)))
+  }
+}
+
+cat(sprintf("- Treatment groups analyzed: %d\n", length(treatment_enrichments)))
+cat(sprintf("- Individual samples analyzed: %d\n", length(sample_enrichments)))
+
+# Neurodevelopment focus summary
+cat("\nNEURODEVELOPMENT-FOCUSED RESULTS:\n")
+if (exists("all_genes_targeted")) {
+  cat(sprintf("- Neurodevelopment categories found (all genes): %d\n", length(all_genes_targeted)))
+  for (category in names(all_genes_targeted)) {
+    cat(sprintf("  - %s: %d terms\n", category, nrow(all_genes_targeted[[category]])))
+  }
+} else {
+  cat("- No neurodevelopment-related terms found in all genes analysis\n")
+}
+
+if (length(treatment_targeted_results) > 0) {
+  cat(sprintf("- Treatment groups with neurodevelopment terms: %d\n", length(treatment_targeted_results)))
+  for (treatment in names(treatment_targeted_results)) {
+    cat(sprintf("  - %s: %d categories\n", treatment, length(treatment_targeted_results[[treatment]])))
+  }
+} else {
+  cat("- No neurodevelopment-related terms found in treatment group analyses\n")
+}
+
+# Files generated summary
+cat("\nFILES GENERATED:\n")
+cat("Data and Results:\n")
+cat("- gene_sample_mapping_summary.csv (complete gene-sample relationships)\n")
+cat("- RESULTS_EXPLANATION.txt (guide to interpreting results)\n")
+cat("- chr21_genes_references.csv (chromosome 21 gene citations)\n")
+cat("- intellectual_disability_genes_references.csv (ID gene citations)\n")
+
+cat("\nEnrichment Results (CSV files):\n")
+cat("- all_genes_GO_BP_results.csv\n")
+cat("- all_genes_KEGG_results.csv\n")
+if (length(treatment_enrichments) > 0) {
+  for (name in names(treatment_enrichments)) {
+    cat(sprintf("- treatment_%s_GO_BP_results.csv\n", name))
+    cat(sprintf("- treatment_%s_KEGG_results.csv\n", name))
+  }
+}
+
+cat("\nVisualization Files (PNG plots with viridis colors):\n")
+cat("- treatment_groups_venn.png (if 2-3 groups)\n")
+cat("- treatment_upset_plot.png\n")
+cat("- Various GO and KEGG dotplots and barplots\n")
+cat("- Focused neurodevelopment plots (if terms found)\n")
+
+# Final recommendations
+cat("\n", paste(rep("=", 80), collapse=""), "\n")
+cat("=== FINAL RECOMMENDATIONS ===\n")
+cat(paste(rep("=", 80), collapse=""), "\n")
+
+cat("1. PRIORITIZE THESE RESULTS:\n")
+cat("   - Focus on GO Biological Process and KEGG pathway results\n")
+cat("   - Use q-value < 0.05 for significance (some use < 0.1 for exploratory)\n")
+cat("   - Pay attention to 'Count' column (number of your genes in each term)\n")
+
+cat("\n2. SAMPLE TRACKING:\n")
+cat("   - Check 'Genes_with_Sample_Info' column to see treatment group origins\n")
+cat("   - Use gene_sample_mapping_summary.csv for detailed gene-sample relationships\n")
+cat("   - Compare results between treatment groups for differential effects\n")
+
+cat("\n3. NEURODEVELOPMENT FOCUS:\n")
+if (exists("all_genes_targeted") && length(all_genes_targeted) > 0) {
+  cat("   - Neurodevelopment-related terms were found - examine these closely\n")
+  cat("   - Cross-reference with known DS/ID genes if present in your data\n")
+} else {
+  cat("   - No strong neurodevelopment enrichment found in current analysis\n")
+  cat("   - Consider: (a) different p-value thresholds, (b) pathway crosstalk analysis\n")
+}
+
+cat("\n4. KNOWN GENE VALIDATION:\n")
+if (length(ds_analysis$chr21_genes) > 0 || length(ds_analysis$id_genes) > 0) {
+  cat("   - You have known DS/ID genes in your dataset - validate these findings\n")
+  cat("   - Check literature references in the generated CSV files\n")
+  cat("   - Consider these genes as positive controls for your analysis\n")
+} else {
+  cat("   - No known DS/ID genes found - your DA genes may represent novel findings\n")
+  cat("   - Focus on functional pathway analysis for novel insights\n")
+}
+
+cat("\n5. EXCEL USAGE:\n")
+cat("   - GeneRatio and BgRatio columns have apostrophe prefix to prevent date conversion\n")
+cat("   - Remove apostrophe if needed for calculations\n")
+cat("   - All CSV files are Excel-compatible\n")
+
+cat("\n6. NEXT STEPS:\n")
+cat("   - Validate key pathways with additional experiments\n")
+cat("   - Consider pathway crosstalk analysis for related terms\n")
+cat("   - Perform literature review using provided gene references\n")
+cat("   - Consider functional clustering of similar GO terms\n")
+
+# Error handling notes
+cat("\n7. TROUBLESHOOTING:\n")
+cat("   - Disease Ontology errors are normal and not concerning\n")
+cat("   - 1-5% gene mapping failures are expected and acceptable\n")
+cat("   - Contact support if >10% of genes fail to map\n")
+
+cat("\n", paste(rep("=", 80), collapse=""), "\n")
+cat("=== ANALYSIS COMPLETE ===\n")
+cat(paste(rep("=", 80), collapse=""), "\n")
+cat("All results saved to current working directory.\n")
+cat("Check the generated files for detailed results and visualizations.\n")
+cat("Use RESULTS_EXPLANATION.txt for guidance on interpreting results.\n")
