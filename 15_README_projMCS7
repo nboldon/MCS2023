@@ -78,3 +78,6 @@ Combines treatment group motif spreadsheets for comparison purposes
 
 # 15_Motif_CellType_PairwiseComps
 Loops through all cell type groupings making pairwise comparisons between each cell type
+
+# 15_Peak_Analysis_byTx
+Compares genomic peaks by treatment
