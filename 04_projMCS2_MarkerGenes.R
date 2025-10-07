@@ -68,7 +68,7 @@ markerList.Cluster.markers <- data.frame(getMarkers(Cluster.markers, cutOff = "F
 cluster.markers.test <- markerList.Cluster.markers
 
 #To get a list of dataframe objects, one for each cluster, containing the relevant marker features
-markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & Log2FC >= 1.25")
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
 
 #Marker list by cluster
 markerList$C6
