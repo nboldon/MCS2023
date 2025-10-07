@@ -49,7 +49,7 @@ markerGS <- getMarkerFeatures(
 	testMethod = "wilcoxon"
 )
 
-markerList <- getMarkers(markerGS, cutOff = "FDR <= 0.01 & Log2FC >= 1.25")
+markerList <- getMarkers(markerGS, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
 
 #Marker list by cluster
 markerList$C6
