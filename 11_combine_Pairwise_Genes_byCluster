@@ -1,0 +1,45 @@
+
+
+# Install and load required package
+if (!require("openxlsx")) install.packages("openxlsx")
+library(openxlsx)
+
+# Set your working directory to where the CSV files are located
+setwd("/Volumes/DataBox/Final_Analysis_relaxed/Pairwise_Genes_byCluster_relaxed")
+
+# Get all CSV files in the directory
+csv_files <- list.files(pattern = "\\.csv$", full.names = FALSE)
+
+# Create a new workbook
+wb <- createWorkbook()
+
+# Loop through each CSV file
+for (file in csv_files) {
+  # Read the CSV file
+  data <- read.csv(file, stringsAsFactors = FALSE)
+  
+  # Extract filename without extension for sheet name
+  sheet_name <- gsub("\\.csv$", "", file)
+  
+  # Excel sheet names have a 31 character limit, so truncate if needed
+  if (nchar(sheet_name) > 31) {
+    sheet_name <- substr(sheet_name, 1, 31)
+  }
+  
+  # Add worksheet to workbook
+  addWorksheet(wb, sheetName = sheet_name)
+  
+  # Write data to the worksheet
+  writeData(wb, sheet = sheet_name, x = data)
+  
+  # Optional: Auto-adjust column widths for better readability
+  setColWidths(wb, sheet = sheet_name, 
+               cols = 1:ncol(data), 
+               widths = "auto")
+  
+  print(paste("Added sheet:", sheet_name))
+}
+
+# Save the workbook
+saveWorkbook(wb, "combined_Pairwise_Genes_byCluster_relaxed.xlsx", overwrite = TRUE)
+
