@@ -1,0 +1,216 @@
+
+library(tidyverse)
+
+setwd("/Volumes/DataBox/Final_Analysis")
+
+
+# Function to process multiple CSV files and find shared genes
+find_shared_genes <- function(file_pattern = "*.csv", 
+                              min_occurrences = 2,
+                              output_file = "shared_genes_summary_relaxed.csv") {
+  
+  # Get list of all CSV files matching the pattern
+  csv_files <- list.files(pattern = file_pattern, full.names = FALSE)
+  
+  if(length(csv_files) == 0) {
+    stop("No CSV files found matching the pattern")
+  }
+  
+  cat("Processing", length(csv_files), "files...\n")
+  
+  # Initialize list to store gene data from each file
+  all_genes_list <- list()
+  
+  # Read each file and extract gene names
+  for(file in csv_files) {
+    tryCatch({
+      # Read the CSV
+      df <- read.csv(file, stringsAsFactors = FALSE)
+      
+      # Extract unique gene names (assuming column is called 'name')
+      if("name" %in% names(df)) {
+        genes <- unique(df$name)
+        all_genes_list[[file]] <- genes
+        cat("  -", file, ":", length(genes), "unique genes\n")
+      } else {
+        warning(paste("Column 'name' not found in", file))
+      }
+    }, error = function(e) {
+      warning(paste("Error reading", file, ":", e$message))
+    })
+  }
+  
+  # Create a data frame tracking gene occurrences across files
+  gene_file_df <- data.frame()
+  
+  for(file_name in names(all_genes_list)) {
+    genes_in_file <- all_genes_list[[file_name]]
+    if(length(genes_in_file) > 0) {
+      temp_df <- data.frame(
+        gene = genes_in_file,
+        file = file_name,
+        stringsAsFactors = FALSE
+      )
+      gene_file_df <- rbind(gene_file_df, temp_df)
+    }
+  }
+  
+  # Count occurrences of each gene across files
+  gene_counts <- gene_file_df %>%
+    group_by(gene) %>%
+    summarise(
+      n_files = n_distinct(file),
+      files = paste(sort(unique(file)), collapse = "; ")
+    ) %>%
+    arrange(desc(n_files), gene)
+  
+  # Filter for genes appearing in multiple files
+  shared_genes <- gene_counts %>%
+    filter(n_files >= min_occurrences)
+  
+  cat("\nSummary:\n")
+  cat("  - Total unique genes across all files:", nrow(gene_counts), "\n")
+  cat("  - Genes in", min_occurrences, "or more files:", nrow(shared_genes), "\n")
+  
+  # Save results
+  write.csv(shared_genes, output_file, row.names = FALSE)
+  cat("\nResults saved to:", output_file, "\n")
+  
+  # Create detailed output with gene presence matrix
+  genes_matrix <- gene_file_df %>%
+    mutate(present = 1) %>%
+    pivot_wider(
+      names_from = file,
+      values_from = present,
+      values_fill = 0
+    )
+  
+  # Save the presence matrix as well
+  matrix_output <- gsub("\\.csv$", "_matrix_relaxed.csv", output_file)
+  write.csv(genes_matrix, matrix_output, row.names = FALSE)
+  cat("Presence matrix saved to:", matrix_output, "\n")
+  
+  # Return both results
+  return(list(
+    summary = shared_genes,
+    matrix = genes_matrix,
+    all_gene_file_pairs = gene_file_df
+  ))
+}
+
+# Alternative function that includes additional gene information
+find_shared_genes_detailed <- function(file_pattern = "*.csv",
+                                       min_occurrences = 2,
+                                       output_file = "shared_genes_detailed_relaxed.xlsx") {
+  
+  require(openxlsx)
+  
+  csv_files <- list.files(pattern = file_pattern, full.names = FALSE)
+  
+  # Store full data from each file
+  all_data_list <- list()
+  
+  for(file in csv_files) {
+    tryCatch({
+      df <- read.csv(file, stringsAsFactors = FALSE)
+      if("name" %in% names(df)) {
+        # Add source file column
+        df$source_file <- file
+        all_data_list[[file]] <- df
+        cat("Read", file, ":", nrow(df), "rows\n")
+      }
+    }, error = function(e) {
+      warning(paste("Error reading", file, ":", e$message))
+    })
+  }
+  
+  # Combine all data
+  all_data <- bind_rows(all_data_list)
+  
+  # Get genes that appear in multiple files
+  gene_file_counts <- all_data %>%
+    group_by(name) %>%
+    summarise(
+      n_files = n_distinct(source_file),
+      files = paste(sort(unique(source_file)), collapse = "; "),
+      mean_Log2FC = mean(Log2FC, na.rm = TRUE),
+      min_FDR = min(FDR, na.rm = TRUE),
+      mean_MeanDiff = mean(MeanDiff, na.rm = TRUE)
+    ) %>%
+    filter(n_files >= min_occurrences) %>%
+    arrange(desc(n_files), name)
+  
+  # Get detailed data for shared genes
+  shared_genes_detailed <- all_data %>%
+    filter(name %in% gene_file_counts$name) %>%
+    arrange(name, source_file)
+  
+  # Create Excel workbook with multiple sheets
+  wb <- createWorkbook()
+  
+  # Sheet 1: Summary
+  addWorksheet(wb, "Summary")
+  writeData(wb, "Summary", gene_file_counts)
+  
+  # Sheet 2: Detailed data
+  addWorksheet(wb, "Detailed")
+  writeData(wb, "Detailed", shared_genes_detailed)
+  
+  # Sheet 3: Presence matrix
+  presence_matrix <- all_data %>%
+    select(name, source_file) %>%
+    distinct() %>%
+    mutate(present = 1) %>%
+    pivot_wider(
+      names_from = source_file,
+      values_from = present,
+      values_fill = 0
+    ) %>%
+    filter(name %in% gene_file_counts$name)
+  
+  addWorksheet(wb, "Presence_Matrix")
+  writeData(wb, "Presence_Matrix", presence_matrix)
+  
+  # Save Excel file
+  saveWorkbook(wb, output_file, overwrite = TRUE)
+  cat("\nDetailed results saved to:", output_file, "\n")
+  
+  return(list(
+    summary = gene_file_counts,
+    detailed = shared_genes_detailed,
+    matrix = presence_matrix
+  ))
+}
+
+# Example usage:
+# Basic usage - find genes in 2+ files
+results <- find_shared_genes(
+  file_pattern = "*.csv",  # Adjust pattern to match your files
+  min_occurrences = 2,
+  output_file = "shared_genes_summary_relaxed.csv"
+)
+
+# View the summary
+head(results$summary)
+
+# For detailed analysis with Excel output
+results_detailed <- find_shared_genes_detailed(
+   file_pattern = "*.csv",
+   min_occurrences = 2,
+   output_file = "shared_genes_analysis_relaxed.xlsx"
+ )
+
+# To find genes that appear in ALL files:
+# total_files <- length(list.files(pattern = "CellType.*\\.csv"))
+# results_all <- find_shared_genes(min_occurrences = total_files)
+
+# Quick visualization of gene overlap
+library(ggplot2)
+if(nrow(results$summary) > 0) {
+  ggplot(results$summary, aes(x = factor(n_files))) +
+    geom_bar(fill = "steelblue") +
+    labs(x = "Number of Files", 
+         y = "Number of Genes",
+         title = "Distribution of Genes Across Files") +
+    theme_minimal()
+}
