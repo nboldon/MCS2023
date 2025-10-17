@@ -1,0 +1,670 @@
+
+
+
+#Load libraries
+library(ArchR)
+library(Seurat)
+library(BiocManager)
+library(BiocGenerics)
+library(clusterProfiler)  
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+library(enrichplot)
+library(pheatmap)
+library(ggplot2)
+library(viridis)
+library(ggpubr)
+library(dplyr)
+library(tidyr)
+
+#Additional setup
+setwd("/Volumes/DataBox/Final_Analysis")
+addArchRGenome("mm10")
+addArchRThreads(threads = 16)
+
+
+#Load project
+projMCS7 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS7", force = FALSE, showLogo = FALSE)
+
+getAvailableMatrices(projMCS7)
+
+
+############################################
+############################################
+
+#######################################
+# ASSIGN TREATMENT GROUPS
+#######################################
+
+# Specify which treatment group each sample is in:
+# t1 = 2N
+# t2 = 2N+
+# t3 = Ts
+# t4 = Ts+
+
+treatment <- projMCS7$Sample
+treatment <- gsub("C302_", "t1", treatment)
+treatment <- gsub("C306_", "t1", treatment)
+treatment <- gsub("C309_", "t1", treatment)
+treatment <- gsub("C318_", "t1", treatment)
+treatment <- gsub("C328_", "t1", treatment)
+treatment <- gsub("C332_", "t1", treatment)
+treatment <- gsub("C337_", "t1", treatment)
+treatment <- gsub("C339_", "t1", treatment)
+treatment <- gsub("C346_", "t1", treatment)
+treatment <- gsub("C351_", "t1", treatment)
+treatment <- gsub("C353_", "t1", treatment)
+treatment <- gsub("C360_", "t1", treatment)
+treatment <- gsub("C304_", "t2", treatment)
+treatment <- gsub("C308_", "t2", treatment)
+treatment <- gsub("C312_", "t2", treatment)
+treatment <- gsub("C349_", "t2", treatment)
+treatment <- gsub("C315_", "t2", treatment)
+treatment <- gsub("C321_", "t2", treatment)
+treatment <- gsub("C324_", "t2", treatment)
+treatment <- gsub("C355_", "t2", treatment)
+treatment <- gsub("C327_", "t2", treatment)
+treatment <- gsub("C330_", "t2", treatment)
+treatment <- gsub("C333_", "t2", treatment)
+treatment <- gsub("C358_", "t2", treatment)
+treatment <- gsub("C336_", "t2", treatment)
+treatment <- gsub("C342_", "t2", treatment)
+treatment <- gsub("C348_", "t2", treatment)
+treatment <- gsub("C362_", "t2", treatment)
+treatment <- gsub("C305_", "t3", treatment)
+treatment <- gsub("C307_", "t3", treatment)
+treatment <- gsub("C313_", "t3", treatment)
+treatment <- gsub("C350_", "t3", treatment)
+treatment <- gsub("C316_", "t3", treatment)
+treatment <- gsub("C320_", "t3", treatment)
+treatment <- gsub("C322_", "t3", treatment)
+treatment <- gsub("C352_", "t3", treatment)
+treatment <- gsub("C323_", "t3", treatment)
+treatment <- gsub("C325_", "t3", treatment)
+treatment <- gsub("C334_", "t3", treatment)
+treatment <- gsub("C359_", "t3", treatment)
+treatment <- gsub("C340_", "t3", treatment)
+treatment <- gsub("C341_", "t3", treatment)
+treatment <- gsub("C345_", "t3", treatment)
+treatment <- gsub("C364_", "t3", treatment)
+treatment <- gsub("C301_", "t4", treatment)
+treatment <- gsub("C303_", "t4", treatment)
+treatment <- gsub("C310_", "t4", treatment)
+treatment <- gsub("C314_", "t4", treatment)
+treatment <- gsub("C319_", "t4", treatment)
+treatment <- gsub("C335_", "t4", treatment)
+treatment <- gsub("C338_", "t4", treatment)
+treatment <- gsub("C344_", "t4", treatment)
+treatment <- gsub("C354_", "t4", treatment)
+treatment <- gsub("C356_", "t4", treatment)
+treatment <- gsub("C361_", "t4", treatment)
+treatment <- gsub("C363_", "t4", treatment)
+
+# Verify treatment assignment
+unique(treatment)
+table(treatment)
+
+# Assign to project
+projMCS7$treatment <- treatment
+
+# Verify
+head(projMCS7$treatment)
+table(projMCS7$treatment)
+
+# t1    t2    t3    t4 
+# 23057 30149 29791 21458 
+
+# Get all unique treatments
+treatment_names <- sort(unique(projMCS7$treatment))
+cat("Treatment groups found:", paste(treatment_names, collapse = ", "), "\n\n")
+
+
+#######################################
+#######################################
+# DIFFERENTIAL ACCESSIBILITY BY CELL TYPE
+#######################################
+#######################################
+
+
+#######################################
+# STEP 1: ASSIGN CELL TYPES
+#######################################
+
+
+# Create a named vector with NA values for each cell
+cellTypeVector <- rep(NA, length(projMCS7$cellNames))
+names(cellTypeVector) <- projMCS7$cellNames
+
+# Assign cell types based on cluster membership
+cellTypeVector[projMCS7$Clusters %in% c("C18", "C19", "C21")] <- "glut"
+cellTypeVector[projMCS7$Clusters %in% c("C15", "C16", "C17", "C20", "C25")] <- "glutPrecursor"
+cellTypeVector[projMCS7$Clusters %in% c("C22", "C23")] <- "gaba"
+cellTypeVector[projMCS7$Clusters %in% c("C10", "C11")] <- "microglia"
+cellTypeVector[projMCS7$Clusters %in% c("C2", "C3")] <- "oligo"
+cellTypeVector[projMCS7$Clusters %in% c("C5", "C6")] <- "oligoPrecursor"
+cellTypeVector[projMCS7$Clusters %in% "C4"] <- "glutOligo"
+cellTypeVector[projMCS7$Clusters %in% c("C12", "C13", "C14")] <- "endo"
+cellTypeVector[projMCS7$Clusters %in% "C8"] <- "astro"
+cellTypeVector[projMCS7$Clusters %in% c("C1", "C7", "C9")] <- "astroPrecursor"
+cellTypeVector[projMCS7$Clusters %in% "C24"] <- "glutAstro"
+
+# Add to project
+projMCS7$CellType <- cellTypeVector
+
+# Verify assignment
+cat("\nCell type assignments:\n")
+print(table(projMCS7$CellType, useNA = "ifany"))
+
+astro astroPrecursor           endo           gaba           glut      glutAstro 
+8020            404           3417          10263          56043            874 
+glutOligo  glutPrecursor      microglia          oligo oligoPrecursor 
+1005           7975           3883          10493           2078 
+
+
+
+# Check if any cells are unassigned
+if(any(is.na(projMCS7$CellType))) {
+  cat("\n⚠ WARNING:", sum(is.na(projMCS7$CellType)), "cells have no cell type assignment\n")
+  cat("Clusters with unassigned cells:", 
+      paste(unique(projMCS7$Clusters[is.na(projMCS7$CellType)]), collapse = ", "), "\n")
+} else {
+  cat("\n✓ All cells successfully assigned to cell types\n")
+}
+
+# Show mapping of clusters to cell types
+cat("\nCluster to Cell Type mapping:\n")
+cluster_to_celltype <- unique(data.frame(
+  Cluster = projMCS7$Clusters,
+  CellType = projMCS7$CellType
+))
+cluster_to_celltype <- cluster_to_celltype[order(cluster_to_celltype$CellType, cluster_to_celltype$Cluster), ]
+print(cluster_to_celltype)
+
+# Save mapping for reference
+write.csv(cluster_to_celltype, "Cluster_to_CellType_Mapping.csv", row.names = FALSE)
+
+
+#######################################
+# CREATE COMBINED IDENTIFIERS
+#######################################
+
+# Create treatment_celltype identifier
+projMCS7$treatment_celltype <- paste0(projMCS7$treatment, "_", projMCS7$CellType)
+
+# Show distribution
+cat("\nTreatment-CellType combinations:\n")
+treatment_celltype_table <- table(projMCS7$treatment_celltype)
+print(treatment_celltype_table)
+
+# Save for reference
+treatment_celltype_df <- as.data.frame(treatment_celltype_table)
+colnames(treatment_celltype_df) <- c("Treatment_CellType", "N_Cells")
+treatment_celltype_df <- treatment_celltype_df[order(-treatment_celltype_df$N_Cells), ]
+write.csv(treatment_celltype_df, "Treatment_CellType_Cell_Counts.csv", row.names = FALSE)
+
+# Summary by cell type and treatment
+summary_by_type <- projMCS7@cellColData %>%
+  as.data.frame() %>%
+  group_by(CellType, treatment) %>%
+  summarise(N_Cells = n(), .groups = "drop") %>%
+  pivot_wider(names_from = treatment, values_from = N_Cells, values_fill = 0)
+
+cat("\n\nCells per treatment per cell type:\n")
+print(summary_by_type)
+
+write.csv(summary_by_type, "CellType_Treatment_Summary.csv", row.names = FALSE)
+
+
+#######################################
+# DEFINE COMPARISONS
+#######################################
+
+# Get unique cell types and treatments
+cell_types <- sort(unique(projMCS7$CellType[!is.na(projMCS7$CellType)]))
+treatment_names <- sort(unique(projMCS7$treatment))
+
+cat("Cell types:", length(cell_types), "-", paste(cell_types, collapse = ", "), "\n")
+cat("Treatments:", length(treatment_names), "-", paste(treatment_names, collapse = ", "), "\n\n")
+
+# TYPE 1: Pairwise comparisons
+treatment_pairs <- combn(treatment_names, 2, simplify = FALSE)
+
+cat("Pairwise comparisons:", length(treatment_pairs), "pairs × 2 directions = ", 
+    length(treatment_pairs) * 2, "comparisons\n")
+
+# TYPE 2: One vs all comparisons
+one_vs_all_comparisons <- list()
+for(treatment in treatment_names) {
+  other_treatments <- treatment_names[treatment_names != treatment]
+  one_vs_all_comparisons[[treatment]] <- list(
+    focal = treatment,
+    background = other_treatments,
+    label = paste0(treatment, "_vs_all")
+  )
+}
+
+cat("One vs all comparisons:", length(one_vs_all_comparisons), "comparisons\n\n")
+
+
+#######################################
+# HELPER FUNCTIONS
+#######################################
+
+# Check if both treatments present in a cell type
+get_common_celltypes <- function(treatment1_name, treatment2_name) {
+  t1_combinations <- unique(projMCS7$treatment_celltype[projMCS7$treatment == treatment1_name])
+  t2_combinations <- unique(projMCS7$treatment_celltype[projMCS7$treatment == treatment2_name])
+  
+  t1_celltypes <- gsub(paste0(treatment1_name, "_"), "", t1_combinations)
+  t2_celltypes <- gsub(paste0(treatment2_name, "_"), "", t2_combinations)
+  
+  common <- intersect(t1_celltypes, t2_celltypes)
+  return(common)
+}
+
+# Get cell types for a treatment
+get_celltypes_for_treatment <- function(treatment_name) {
+  treatment_combinations <- unique(projMCS7$treatment_celltype[projMCS7$treatment == treatment_name])
+  celltypes <- gsub(paste0(treatment_name, "_"), "", treatment_combinations)
+  return(celltypes[!is.na(celltypes)])
+}
+
+
+#######################################
+#######################################
+# PART 1: PAIRWISE BIDIRECTIONAL COMPARISONS
+#######################################
+#######################################
+
+# Initialize results tracking
+pairwise_results <- data.frame(
+  Comparison = character(),
+  CellType = character(),
+  N_Cells_Group1 = integer(),
+  N_Cells_Group2 = integer(),
+  N_Markers = integer(),
+  Status = character(),
+  stringsAsFactors = FALSE
+)
+
+for(pair in treatment_pairs) {
+  
+  t1 <- pair[1]
+  t2 <- pair[2]
+  
+  cat(paste("\n=== Processing:", t1, "vs", t2, "===\n"))
+  
+  common_celltypes <- get_common_celltypes(t1, t2)
+  
+  if(length(common_celltypes) == 0) {
+    cat("  No common cell types\n")
+    next
+  }
+  
+  cat(paste("Common cell types:", paste(common_celltypes, collapse=", "), "\n\n"))
+  
+  for(celltype in common_celltypes) {
+    
+    cat(paste("  Cell Type:", celltype))
+    
+    # Subset to cell type
+    celltypeSubset <- projMCS7[projMCS7$CellType == celltype & !is.na(projMCS7$CellType)]
+    
+    # Check cell counts
+    n_t1 <- sum(celltypeSubset$treatment == t1)
+    n_t2 <- sum(celltypeSubset$treatment == t2)
+    cat(paste(" | Cells:", t1, "=", n_t1, ",", t2, "=", n_t2))
+    
+    if(n_t1 < 25 || n_t2 < 25) {
+      cat(" | SKIPPED (need ≥25 per group)\n")
+      
+      # Track for both directions
+      for(direction in c(paste0(t1, "_vs_", t2), paste0(t2, "_vs_", t1))) {
+        pairwise_results <- rbind(pairwise_results, data.frame(
+          Comparison = direction,
+          CellType = celltype,
+          N_Cells_Group1 = n_t1,
+          N_Cells_Group2 = n_t2,
+          N_Markers = 0,
+          Status = "Insufficient cells",
+          stringsAsFactors = FALSE
+        ))
+      }
+      next
+    }
+    
+    # DIRECTION 1: t1 vs t2
+    cat(paste(" | Testing", t1, "vs", t2, "..."))
+    
+    markerTest_t1t2 <- tryCatch({
+      getMarkerFeatures(
+        ArchRProj = celltypeSubset,
+        useMatrix = "GeneScoreMatrix",
+        groupBy = "treatment",
+        testMethod = "wilcoxon",
+        bias = c("TSSEnrichment", "log10(nFrags)"),
+        useGroups = t1,
+        bgdGroups = t2
+      )
+    }, error = function(e) {
+      cat(" ERROR\n")
+      return(NULL)
+    })
+    
+    if(!is.null(markerTest_t1t2)) {
+      markerList_t1t2 <- getMarkers(markerTest_t1t2, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+      
+      if(t1 %in% names(markerList_t1t2)) {
+        markers_t1t2 <- markerList_t1t2[[t1]]
+        if(nrow(markers_t1t2) > 0) {
+          filename <- paste0("CellType_", t1, "_vs_", t2, "_", celltype, "_markers.csv")
+          write.csv(markers_t1t2, file = filename, row.names = TRUE)
+          cat(paste(" ", nrow(markers_t1t2), "markers"))
+          
+          pairwise_results <- rbind(pairwise_results, data.frame(
+            Comparison = paste0(t1, "_vs_", t2),
+            CellType = celltype,
+            N_Cells_Group1 = n_t1,
+            N_Cells_Group2 = n_t2,
+            N_Markers = nrow(markers_t1t2),
+            Status = "Complete",
+            stringsAsFactors = FALSE
+          ))
+        } else {
+          pairwise_results <- rbind(pairwise_results, data.frame(
+            Comparison = paste0(t1, "_vs_", t2),
+            CellType = celltype,
+            N_Cells_Group1 = n_t1,
+            N_Cells_Group2 = n_t2,
+            N_Markers = 0,
+            Status = "No significant markers",
+            stringsAsFactors = FALSE
+          ))
+        }
+      }
+    }
+    
+    # DIRECTION 2: t2 vs t1
+    cat(paste(" | Testing", t2, "vs", t1, "..."))
+    
+    markerTest_t2t1 <- tryCatch({
+      getMarkerFeatures(
+        ArchRProj = celltypeSubset,
+        useMatrix = "GeneScoreMatrix",
+        groupBy = "treatment",
+        testMethod = "wilcoxon",
+        bias = c("TSSEnrichment", "log10(nFrags)"),
+        useGroups = t2,
+        bgdGroups = t1
+      )
+    }, error = function(e) {
+      cat(" ERROR\n")
+      return(NULL)
+    })
+    
+    if(!is.null(markerTest_t2t1)) {
+      markerList_t2t1 <- getMarkers(markerTest_t2t1, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+      
+      if(t2 %in% names(markerList_t2t1)) {
+        markers_t2t1 <- markerList_t2t1[[t2]]
+        if(nrow(markers_t2t1) > 0) {
+          filename <- paste0("CellType_", t2, "_vs_", t1, "_", celltype, "_markers.csv")
+          write.csv(markers_t2t1, file = filename, row.names = TRUE)
+          cat(paste(" ", nrow(markers_t2t1), "markers | SAVED\n"))
+          
+          pairwise_results <- rbind(pairwise_results, data.frame(
+            Comparison = paste0(t2, "_vs_", t1),
+            CellType = celltype,
+            N_Cells_Group1 = n_t2,
+            N_Cells_Group2 = n_t1,
+            N_Markers = nrow(markers_t2t1),
+            Status = "Complete",
+            stringsAsFactors = FALSE
+          ))
+        } else {
+          cat(" 0 markers\n")
+          pairwise_results <- rbind(pairwise_results, data.frame(
+            Comparison = paste0(t2, "_vs_", t1),
+            CellType = celltype,
+            N_Cells_Group1 = n_t2,
+            N_Cells_Group2 = n_t1,
+            N_Markers = 0,
+            Status = "No significant markers",
+            stringsAsFactors = FALSE
+          ))
+        }
+      }
+    } else {
+      cat("\n")
+    }
+  }
+}
+
+cat("\n\nPairwise comparisons complete!\n")
+
+# Save pairwise results
+write.csv(pairwise_results, "CellType_Pairwise_Comparison_Summary.csv", row.names = FALSE)
+
+# Summary statistics
+cat("\n--- PAIRWISE SUMMARY ---\n")
+cat(paste("Total comparisons:", nrow(pairwise_results), "\n"))
+cat(paste("Successful:", sum(pairwise_results$Status == "Complete"), "\n"))
+cat(paste("With markers:", sum(pairwise_results$N_Markers > 0), "\n"))
+cat(paste("Total markers:", sum(pairwise_results$N_Markers), "\n\n"))
+
+# By comparison
+comp_summary <- pairwise_results %>%
+  group_by(Comparison) %>%
+  summarise(
+    N_CellTypes = n(),
+    N_With_Markers = sum(N_Markers > 0),
+    Total_Markers = sum(N_Markers),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Markers))
+
+cat("Markers by comparison:\n")
+print(comp_summary)
+cat("\n")
+
+# By cell type
+celltype_summary <- pairwise_results %>%
+  group_by(CellType) %>%
+  summarise(
+    N_Comparisons = n(),
+    N_With_Markers = sum(N_Markers > 0),
+    Total_Markers = sum(N_Markers),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Markers))
+
+cat("Markers by cell type:\n")
+print(celltype_summary)
+cat("\n")
+
+
+#######################################
+#######################################
+# PART 2: ONE VS ALL COMPARISONS
+#######################################
+#######################################
+
+# Initialize results tracking
+one_vs_all_results <- data.frame(
+  Focal_Treatment = character(),
+  Background_Treatments = character(),
+  CellType = character(),
+  N_Focal_Cells = integer(),
+  N_Background_Cells = integer(),
+  N_Markers = integer(),
+  Status = character(),
+  stringsAsFactors = FALSE
+)
+
+for(treatment in names(one_vs_all_comparisons)) {
+  
+  comp <- one_vs_all_comparisons[[treatment]]
+  focal <- comp$focal
+  background <- comp$background
+  
+  cat(paste("\n=== COMPARISON:", focal, "vs ALL [", paste(background, collapse = ", "), "] ===\n\n"))
+  
+  # Get cell types where focal treatment is present
+  focal_celltypes <- get_celltypes_for_treatment(focal)
+  
+  if(length(focal_celltypes) == 0) {
+    cat("  No cell types found\n")
+    next
+  }
+  
+  cat(paste("Cell types with", focal, ":", paste(focal_celltypes, collapse = ", "), "\n\n"))
+  
+  for(celltype in focal_celltypes) {
+    
+    cat(paste("  Cell Type:", celltype))
+    
+    # Subset to cell type
+    celltypeSubset <- projMCS7[projMCS7$CellType == celltype & !is.na(projMCS7$CellType)]
+    
+    # Check treatments present
+    treatments_in_celltype <- unique(celltypeSubset$treatment)
+    background_present <- background[background %in% treatments_in_celltype]
+    
+    if(length(background_present) == 0) {
+      cat(" | No background treatments | SKIPPED\n")
+      next
+    }
+    
+    # Count cells
+    n_focal <- sum(celltypeSubset$treatment == focal)
+    n_background <- sum(celltypeSubset$treatment %in% background_present)
+    
+    cat(paste(" | Cells:", focal, "=", n_focal, 
+              "vs [", paste(background_present, collapse = ","), "] =", n_background))
+    
+    if(n_focal < 25 || n_background < 25) {
+      cat(" | SKIPPED (need ≥25)\n")
+      
+      one_vs_all_results <- rbind(one_vs_all_results, data.frame(
+        Focal_Treatment = focal,
+        Background_Treatments = paste(background_present, collapse = ","),
+        CellType = celltype,
+        N_Focal_Cells = n_focal,
+        N_Background_Cells = n_background,
+        N_Markers = 0,
+        Status = "Insufficient cells",
+        stringsAsFactors = FALSE
+      ))
+      next
+    }
+    
+    # Perform test
+    cat(" | Testing...")
+    
+    markerTest <- tryCatch({
+      getMarkerFeatures(
+        ArchRProj = celltypeSubset,
+        useMatrix = "GeneScoreMatrix",
+        groupBy = "treatment",
+        testMethod = "wilcoxon",
+        bias = c("TSSEnrichment", "log10(nFrags)"),
+        useGroups = focal,
+        bgdGroups = background_present
+      )
+    }, error = function(e) {
+      cat(" ERROR\n")
+      return(NULL)
+    })
+    
+    if(!is.null(markerTest)) {
+      markerList <- getMarkers(markerTest, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+      
+      if(focal %in% names(markerList)) {
+        markers <- markerList[[focal]]
+        
+        if(nrow(markers) > 0) {
+          filename <- paste0("CellType_", focal, "_vs_all_", celltype, "_markers.csv")
+          write.csv(markers, file = filename, row.names = TRUE)
+          cat(paste(" ", nrow(markers), "markers | SAVED\n"))
+          
+          one_vs_all_results <- rbind(one_vs_all_results, data.frame(
+            Focal_Treatment = focal,
+            Background_Treatments = paste(background_present, collapse = ","),
+            CellType = celltype,
+            N_Focal_Cells = n_focal,
+            N_Background_Cells = n_background,
+            N_Markers = nrow(markers),
+            Status = "Complete",
+            stringsAsFactors = FALSE
+          ))
+        } else {
+          cat(" 0 markers\n")
+          
+          one_vs_all_results <- rbind(one_vs_all_results, data.frame(
+            Focal_Treatment = focal,
+            Background_Treatments = paste(background_present, collapse = ","),
+            CellType = celltype,
+            N_Focal_Cells = n_focal,
+            N_Background_Cells = n_background,
+            N_Markers = 0,
+            Status = "No significant markers",
+            stringsAsFactors = FALSE
+          ))
+        }
+      }
+    }
+  }
+}
+
+cat("\n\nOne vs all comparisons complete!\n")
+
+# Save results
+write.csv(one_vs_all_results, "CellType_One_vs_All_Summary.csv", row.names = FALSE)
+
+# Summary statistics
+cat("\n--- ONE VS ALL SUMMARY ---\n")
+cat(paste("Total comparisons:", nrow(one_vs_all_results), "\n"))
+cat(paste("Successful:", sum(one_vs_all_results$Status == "Complete"), "\n"))
+cat(paste("With markers:", sum(one_vs_all_results$N_Markers > 0), "\n"))
+cat(paste("Total markers:", sum(one_vs_all_results$N_Markers), "\n\n"))
+
+# By focal treatment
+focal_summary <- one_vs_all_results %>%
+  group_by(Focal_Treatment) %>%
+  summarise(
+    N_CellTypes = n(),
+    N_With_Markers = sum(N_Markers > 0),
+    Total_Markers = sum(N_Markers),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Markers))
+
+cat("Markers by focal treatment:\n")
+print(focal_summary)
+cat("\n")
+
+# By cell type
+celltype_onevsall <- one_vs_all_results %>%
+  group_by(CellType) %>%
+  summarise(
+    N_Comparisons = n(),
+    N_With_Markers = sum(N_Markers > 0),
+    Total_Markers = sum(N_Markers),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Markers))
+
+cat("Markers by cell type:\n")
+print(celltype_onevsall)
+cat("\n")
+
+
+#######################################
+# SAVE PROJECT
+#######################################
+
+saveArchRProject(ArchRProj = projMCS7, 
+                 outputDirectory = "/Volumes/DataBox/Save-ProjMCS7", 
+                 load = FALSE)
+
+cat("\nAnalysis complete!\n")
