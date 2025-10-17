@@ -1,0 +1,883 @@
+
+
+#Load libraries
+library(ArchR)
+library(Seurat)
+library(BiocManager)
+library(BiocGenerics)
+library(clusterProfiler)  
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+library(enrichplot)
+library(pheatmap)
+library(ggplot2)
+library(viridis)
+library(ggpubr)
+library(dplyr)
+library(tidyr)
+
+#Additional setup
+setwd("/Volumes/DataBox/Final_Analysis")
+addArchRGenome("mm10")
+addArchRThreads(threads = 1)
+
+
+#Load project
+projMCS7 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS7", force = FALSE, showLogo = FALSE)
+
+getAvailableMatrices(projMCS7)
+
+
+############################################
+############################################
+############################################
+############################################
+############################################
+############################################
+
+
+#######################################
+# ASSIGN TREATMENT GROUPS
+#######################################
+
+# Specify which treatment group each sample is in:
+# t1 = 2N
+# t2 = 2N+
+# t3 = Ts
+# t4 = Ts+
+treatment <- projMCS7$Sample
+treatment <- gsub("C302_", "t1", treatment)
+treatment <- gsub("C306_", "t1", treatment)
+treatment <- gsub("C309_", "t1", treatment)
+treatment <- gsub("C318_", "t1", treatment)
+treatment <- gsub("C328_", "t1", treatment)
+treatment <- gsub("C332_", "t1", treatment)
+treatment <- gsub("C337_", "t1", treatment)
+treatment <- gsub("C339_", "t1", treatment)
+treatment <- gsub("C346_", "t1", treatment)
+treatment <- gsub("C351_", "t1", treatment)
+treatment <- gsub("C353_", "t1", treatment)
+treatment <- gsub("C360_", "t1", treatment)
+treatment <- gsub("C304_", "t2", treatment)
+treatment <- gsub("C308_", "t2", treatment)
+treatment <- gsub("C312_", "t2", treatment)
+treatment <- gsub("C349_", "t2", treatment)
+treatment <- gsub("C315_", "t2", treatment)
+treatment <- gsub("C321_", "t2", treatment)
+treatment <- gsub("C324_", "t2", treatment)
+treatment <- gsub("C355_", "t2", treatment)
+treatment <- gsub("C327_", "t2", treatment)
+treatment <- gsub("C330_", "t2", treatment)
+treatment <- gsub("C333_", "t2", treatment)
+treatment <- gsub("C358_", "t2", treatment)
+treatment <- gsub("C336_", "t2", treatment)
+treatment <- gsub("C342_", "t2", treatment)
+treatment <- gsub("C348_", "t2", treatment)
+treatment <- gsub("C362_", "t2", treatment)
+treatment <- gsub("C305_", "t3", treatment)
+treatment <- gsub("C307_", "t3", treatment)
+treatment <- gsub("C313_", "t3", treatment)
+treatment <- gsub("C350_", "t3", treatment)
+treatment <- gsub("C316_", "t3", treatment)
+treatment <- gsub("C320_", "t3", treatment)
+treatment <- gsub("C322_", "t3", treatment)
+treatment <- gsub("C352_", "t3", treatment)
+treatment <- gsub("C323_", "t3", treatment)
+treatment <- gsub("C325_", "t3", treatment)
+treatment <- gsub("C334_", "t3", treatment)
+treatment <- gsub("C359_", "t3", treatment)
+treatment <- gsub("C340_", "t3", treatment)
+treatment <- gsub("C341_", "t3", treatment)
+treatment <- gsub("C345_", "t3", treatment)
+treatment <- gsub("C364_", "t3", treatment)
+treatment <- gsub("C301_", "t4", treatment)
+treatment <- gsub("C303_", "t4", treatment)
+treatment <- gsub("C310_", "t4", treatment)
+treatment <- gsub("C314_", "t4", treatment)
+treatment <- gsub("C319_", "t4", treatment)
+treatment <- gsub("C335_", "t4", treatment)
+treatment <- gsub("C338_", "t4", treatment)
+treatment <- gsub("C344_", "t4", treatment)
+treatment <- gsub("C354_", "t4", treatment)
+treatment <- gsub("C356_", "t4", treatment)
+treatment <- gsub("C361_", "t4", treatment)
+treatment <- gsub("C363_", "t4", treatment)
+
+# Verify treatment assignment
+unique(treatment)
+table(treatment)
+
+# Assign to project
+projMCS7$treatment <- treatment
+
+# Verify
+head(projMCS7$treatment)
+table(projMCS7$treatment)
+
+# t1    t2    t3    t4 
+# 23057 30149 29791 21458 
+
+# Get all unique treatments
+treatment_names <- sort(unique(projMCS7$treatment))
+cat("Treatment groups found:", paste(treatment_names, collapse = ", "), "\n\n")
+
+
+#######################################
+# GENE SCORES AND MARKER GENES
+#######################################
+
+# Add impute weights
+projMCS7 <- addImputeWeights(
+  ArchRProj = projMCS7,
+  reducedDims = "IterativeLSI2"  # Specify which reduced dimensions to use
+)
+
+# Get marker features by Clusters
+markerGS <- getMarkerFeatures(
+  ArchRProj = projMCS7,
+  useMatrix = "GeneScoreMatrix",
+  groupBy = "Clusters",
+  bias = c("TSSEnrichment", "log10(nFrags)"),
+  testMethod = "wilcoxon"
+)
+
+markerList <- getMarkers(markerGS, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+
+# Save markers by cluster
+for(i in names(markerList)) {
+  write.csv(markerList[[i]], file = paste(i, "_markers.csv", sep = ""))
+}
+
+
+#######################################
+# DIFFERENTIAL GENE ACCESSIBILITY
+# BY TREATMENT GROUP AND CLUSTER
+#######################################
+
+# Create ALL directional comparisons explicitly
+all_comparisons <- list(
+  # t1 comparisons
+  list(t1 = "t1", t2 = "t2", label = "t1_vs_t2"),
+  list(t1 = "t1", t2 = "t3", label = "t1_vs_t3"),
+  list(t1 = "t1", t2 = "t4", label = "t1_vs_t4"),
+  # t2 comparisons
+  list(t1 = "t2", t2 = "t1", label = "t2_vs_t1"),
+  list(t1 = "t2", t2 = "t3", label = "t2_vs_t3"),
+  list(t1 = "t2", t2 = "t4", label = "t2_vs_t4"),
+  # t3 comparisons
+  list(t1 = "t3", t2 = "t1", label = "t3_vs_t1"),
+  list(t1 = "t3", t2 = "t2", label = "t3_vs_t2"),
+  list(t1 = "t3", t2 = "t4", label = "t3_vs_t4"),
+  # t4 comparisons
+  list(t1 = "t4", t2 = "t1", label = "t4_vs_t1"),
+  list(t1 = "t4", t2 = "t2", label = "t4_vs_t2"),
+  list(t1 = "t4", t2 = "t3", label = "t4_vs_t3")
+)
+
+cat("Total directional comparisons:", length(all_comparisons), "\n")
+cat("\nAll comparisons to be performed:\n")
+for(i in 1:length(all_comparisons)) {
+  comp <- all_comparisons[[i]]
+  cat(sprintf("  %2d. %s vs %s\n", i, comp$t1, comp$t2))
+}
+cat("\n")
+
+# Helper function to find common clusters
+get_common_clusters <- function(treatment1_name, treatment2_name) {
+  t1_combinations <- unique(projMCS7$treatment_cluster[projMCS7$treatment == treatment1_name])
+  t2_combinations <- unique(projMCS7$treatment_cluster[projMCS7$treatment == treatment2_name])
+  
+  t1_clusters <- gsub(paste0(treatment1_name, "_"), "", t1_combinations)
+  t2_clusters <- gsub(paste0(treatment2_name, "_"), "", t2_combinations)
+  
+  common <- intersect(t1_clusters, t2_clusters)
+  return(common)
+}
+
+# Initialize results tracking
+results_summary <- data.frame(
+  Comparison = character(),
+  Cluster = character(),
+  N_Markers = integer(),
+  Status = character(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through all 12 directional comparisons
+for(i in 1:length(all_comparisons)) {
+  
+  comp <- all_comparisons[[i]]
+  t1 <- comp$t1
+  t2 <- comp$t2
+  comp_label <- comp$label
+  
+  cat(paste("\n===========================================\n"))
+  cat(paste("COMPARISON", i, "of 12:", t1, "vs", t2, "\n"))
+  cat(paste("===========================================\n"))
+  
+  common_clusters <- get_common_clusters(t1, t2)
+  
+  if(length(common_clusters) == 0) {
+    cat("  No common clusters found\n")
+    next
+  }
+  
+  cat(paste("Common clusters:", length(common_clusters), "-", 
+            paste(head(common_clusters, 10), collapse=", ")))
+  if(length(common_clusters) > 10) cat(", ...")
+  cat("\n\n")
+  
+  for(cluster in common_clusters) {
+    
+    cat(paste("  Cluster:", cluster))
+    
+    # Subset to cluster
+    clusterSubset <- projMCS7[projMCS7$Clusters %in% cluster]
+    
+    # Check cell counts
+    n_t1 <- sum(clusterSubset$treatment == t1)
+    n_t2 <- sum(clusterSubset$treatment == t2)
+    cat(paste(" | Cells:", t1, "=", n_t1, ",", t2, "=", n_t2))
+    
+    if(n_t1 < 25 || n_t2 < 25) {
+      cat(" | SKIPPED (insufficient cells)\n")
+      results_summary <- rbind(results_summary, data.frame(
+        Comparison = comp_label,
+        Cluster = cluster,
+        N_Markers = 0,
+        Status = "Insufficient cells",
+        stringsAsFactors = FALSE
+      ))
+      next
+    }
+    
+    # Perform differential test
+    cat(" | Testing...")
+    
+    markerTest <- tryCatch({
+      getMarkerFeatures(
+        ArchRProj = clusterSubset,
+        useMatrix = "GeneScoreMatrix",
+        groupBy = "treatment",
+        testMethod = "wilcoxon",
+        bias = c("TSSEnrichment", "log10(nFrags)"),
+        useGroups = t1,
+        bgdGroups = t2
+      )
+    }, error = function(e) {
+      cat(" ERROR:", e$message, "\n")
+      return(NULL)
+    })
+    
+    if(is.null(markerTest)) {
+      results_summary <- rbind(results_summary, data.frame(
+        Comparison = comp_label,
+        Cluster = cluster,
+        N_Markers = 0,
+        Status = "Test failed",
+        stringsAsFactors = FALSE
+      ))
+      next
+    }
+    
+    # Get markers
+    markerList <- getMarkers(markerTest, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+    
+    if(t1 %in% names(markerList)) {
+      markers <- markerList[[t1]]
+      
+      if(nrow(markers) > 0) {
+        # Save markers
+        filename <- paste0(t1, "_vs_", t2, "_", cluster, "_markers.csv")
+        write.csv(markers, file = filename, row.names = TRUE)
+        cat(paste(" | Found", nrow(markers), "markers | SAVED\n"))
+        
+        results_summary <- rbind(results_summary, data.frame(
+          Comparison = comp_label,
+          Cluster = cluster,
+          N_Markers = nrow(markers),
+          Status = "Complete",
+          stringsAsFactors = FALSE
+        ))
+      } else {
+        cat(" | No significant markers found\n")
+        results_summary <- rbind(results_summary, data.frame(
+          Comparison = comp_label,
+          Cluster = cluster,
+          N_Markers = 0,
+          Status = "No significant markers",
+          stringsAsFactors = FALSE
+        ))
+      }
+    } else {
+      cat(" | No markers returned\n")
+      results_summary <- rbind(results_summary, data.frame(
+        Comparison = comp_label,
+        Cluster = cluster,
+        N_Markers = 0,
+        Status = "No markers returned",
+        stringsAsFactors = FALSE
+      ))
+    }
+  }
+}
+
+cat("\n\n===========================================\n")
+cat("ALL DIRECTIONAL COMPARISONS COMPLETE!\n")
+cat("===========================================\n\n")
+
+# Save results summary
+write.csv(results_summary, "Bidirectional_Comparison_Summary.csv", row.names = FALSE)
+
+# Print summary statistics
+cat("SUMMARY STATISTICS:\n")
+cat("-------------------\n")
+cat(paste("Total comparisons attempted:", nrow(results_summary), "\n"))
+# Total comparisons attempted: 300 
+cat(paste("Successful comparisons:", sum(results_summary$Status == "Complete"), "\n"))
+# Successful comparisons: 42 
+cat(paste("Comparisons with markers:", sum(results_summary$N_Markers > 0), "\n"))
+# Comparisons with markers: 42 
+cat(paste("Total markers found:", sum(results_summary$N_Markers), "\n"))
+# Total markers found: 57 
+cat("\n")
+
+# Summary by comparison
+comp_summary <- results_summary %>%
+  group_by(Comparison) %>%
+  summarise(
+    N_Clusters = n(),
+    N_With_Markers = sum(N_Markers > 0),
+    Total_Markers = sum(N_Markers),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Markers))
+
+cat("Markers by comparison:\n")
+print(comp_summary)
+cat("\n")
+
+# Comparison N_Clusters N_With_Markers Total_Markers
+# 1 t1_vs_t4           25              9            14
+# 2 t1_vs_t3           25              7            10
+# 3 t4_vs_t2           25              4             7
+# 4 t2_vs_t4           25              5             6
+# 5 t3_vs_t1           25              4             6
+# 6 t3_vs_t2           25              5             5
+# 7 t4_vs_t1           25              5             5
+# 8 t2_vs_t3           25              2             3
+# 9 t2_vs_t1           25              1             1
+# 10 t1_vs_t2           25              0             0
+# 11 t3_vs_t4           25              0             0
+# 12 t4_vs_t3           25              0             0
+
+# Summary by cluster
+cluster_summary <- results_summary %>%
+  group_by(Cluster) %>%
+  summarise(
+    N_Comparisons = n(),
+    N_With_Markers = sum(N_Markers > 0),
+    Total_Markers = sum(N_Markers),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Markers))
+
+cat("Markers by cluster:\n")
+print(head(cluster_summary, 15))
+cat("\n")
+
+cat("Results summary saved to: Bidirectional_Comparison_Summary.csv\n")
+
+# Cluster N_Comparisons N_With_Markers Total_Markers
+# 1 C3                 12              5            10
+# 2 C18                12              3             6
+# 3 C10                12              3             5
+# 4 C17                12              4             5
+# 5 C22                12              5             5
+# 6 C20                12              4             4
+# 7 C14                12              2             3
+# 8 C16                12              3             3
+# 9 C11                12              2             2
+# 10 C12                12              1             2
+# 11 C21                12              1             2
+# 12 C23                12              2             2
+# 13 C24                12              1             2
+# 14 C6                 12              2             2
+# 15 C8                 12              2             2
+
+
+
+
+#######################################
+#######################################
+# IDENTIFY GENE UNIONS (BIDIRECTIONAL GENES)
+#######################################
+#######################################
+
+
+# Ensure all required variables are defined
+if(!exists("projMCS7")) {
+  stop("Project 'projMCS7' not found. Please load your project first.")
+}
+
+# Define treatment names and pairs
+treatment_names <- sort(unique(projMCS7$treatment))
+cat("Treatment groups:", paste(treatment_names, collapse = ", "), "\n")
+
+treatment_pairs <- combn(treatment_names, 2, simplify = FALSE)
+cat("Treatment pairs:", length(treatment_pairs), "\n\n")
+
+# Define helper function if not already defined
+if(!exists("get_common_clusters")) {
+  get_common_clusters <- function(treatment1_name, treatment2_name) {
+    t1_combinations <- unique(projMCS7$treatment_cluster[projMCS7$treatment == treatment1_name])
+    t2_combinations <- unique(projMCS7$treatment_cluster[projMCS7$treatment == treatment2_name])
+    
+    t1_clusters <- gsub(paste0(treatment1_name, "_"), "", t1_combinations)
+    t2_clusters <- gsub(paste0(treatment2_name, "_"), "", t2_combinations)
+    
+    common <- intersect(t1_clusters, t2_clusters)
+    return(common)
+  }
+}
+
+# Define gene union function
+find_gene_unions <- function(file1, file2, treatment1, treatment2, cluster) {
+  
+  if(!file.exists(file1) || !file.exists(file2)) {
+    cat(paste("  Skipping", cluster, "- one or both files missing\n"))
+    return(NULL)
+  }
+  
+  markers1 <- read.csv(file1, row.names = 1, stringsAsFactors = FALSE)
+  markers2 <- read.csv(file2, row.names = 1, stringsAsFactors = FALSE)
+  
+  common_genes <- intersect(markers1$name, markers2$name)
+  
+  if(length(common_genes) == 0) {
+    cat(paste("  ", cluster, "- No gene unions found\n"))
+    return(NULL)
+  }
+  
+  union_data1 <- markers1[markers1$name %in% common_genes, ]
+  union_data2 <- markers2[markers2$name %in% common_genes, ]
+  
+  colnames(union_data1) <- paste0(colnames(union_data1), "_", treatment1, "vs", treatment2)
+  colnames(union_data2) <- paste0(colnames(union_data2), "_", treatment2, "vs", treatment1)
+  
+  gene_col1 <- paste0("name_", treatment1, "vs", treatment2)
+  gene_col2 <- paste0("name_", treatment2, "vs", treatment1)
+  
+  union_data <- merge(union_data1, union_data2, 
+                      by.x = gene_col1, by.y = gene_col2, 
+                      all = FALSE)
+  
+  colnames(union_data)[1] <- "name"
+  
+  cat(paste("  ", cluster, "- Found", nrow(union_data), "gene unions\n"))
+  
+  return(union_data)
+}
+
+# Initialize tracking
+union_summary <- data.frame(
+  Comparison = character(),
+  Cluster = character(),
+  N_Unions = integer(),
+  stringsAsFactors = FALSE
+)
+
+# Process gene unions for all treatment pairs
+for(pair in treatment_pairs) {
+  
+  t1 <- pair[1]
+  t2 <- pair[2]
+  
+  cat(paste("\n--- Processing gene unions for", t1, "vs", t2, "---\n"))
+  
+  common_clusters <- get_common_clusters(t1, t2)
+  
+  if(length(common_clusters) == 0) {
+    cat("  No common clusters found\n")
+    next
+  }
+  
+  cat(paste("  Common clusters:", length(common_clusters), "\n\n"))
+  
+  for(cluster in common_clusters) {
+    
+    file1 <- paste0(t1, "_vs_", t2, "_", cluster, "_markers.csv")
+    file2 <- paste0(t2, "_vs_", t1, "_", cluster, "_markers.csv")
+    
+    gene_unions <- find_gene_unions(file1, file2, t1, t2, cluster)
+    
+    if(!is.null(gene_unions) && nrow(gene_unions) > 0) {
+      output_file <- paste0(t1, "_", t2, "_", cluster, "_gene_unions.csv")
+      write.csv(gene_unions, file = output_file, row.names = FALSE)
+      
+      # Track results
+      union_summary <- rbind(union_summary, data.frame(
+        Comparison = paste0(t1, "_vs_", t2),
+        Cluster = cluster,
+        N_Unions = nrow(gene_unions),
+        stringsAsFactors = FALSE
+      ))
+    } else {
+      # Track no unions found
+      union_summary <- rbind(union_summary, data.frame(
+        Comparison = paste0(t1, "_vs_", t2),
+        Cluster = cluster,
+        N_Unions = 0,
+        stringsAsFactors = FALSE
+      ))
+    }
+  }
+}
+
+
+# Save summary
+write.csv(union_summary, "Gene_Union_Summary.csv", row.names = FALSE)
+
+# Print summary statistics
+cat("SUMMARY:\n")
+cat("--------\n")
+cat(paste("Total comparisons attempted:", nrow(union_summary), "\n"))
+# Total comparisons attempted: 150 
+cat(paste("Comparisons with gene unions:", sum(union_summary$N_Unions > 0), "\n"))
+# Comparisons with gene unions: 3 
+cat(paste("Total gene unions found:", sum(union_summary$N_Unions), "\n\n"))
+# Total gene unions found: 3 
+
+# Summary by comparison
+comp_summary <- union_summary %>%
+  group_by(Comparison) %>%
+  summarise(
+    N_Clusters = n(),
+    N_With_Unions = sum(N_Unions > 0),
+    Total_Unions = sum(N_Unions),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Unions))
+
+cat("Gene unions by comparison:\n")
+print(comp_summary)
+cat("\n")
+
+# Comparison N_Clusters N_With_Unions Total_Unions
+# 1 t1_vs_t3           25             2            2
+# 2 t1_vs_t4           25             1            1
+# 3 t1_vs_t2           25             0            0
+# 4 t2_vs_t3           25             0            0
+# 5 t2_vs_t4           25             0            0
+# 6 t3_vs_t4           25             0            0
+
+# Summary by cluster
+cluster_summary <- union_summary %>%
+  group_by(Cluster) %>%
+  summarise(
+    N_Comparisons = n(),
+    N_With_Unions = sum(N_Unions > 0),
+    Total_Unions = sum(N_Unions),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Unions))
+
+cat("Gene unions by cluster (top 15):\n")
+print(head(cluster_summary, 15))
+cat("\n")
+
+# Cluster N_Comparisons N_With_Unions Total_Unions
+# 1 C14                 6             1            1
+# 2 C17                 6             1            1
+# 3 C3                  6             1            1
+# 4 C1                  6             0            0
+# 5 C10                 6             0            0
+# 6 C11                 6             0            0
+# 7 C12                 6             0            0
+# 8 C13                 6             0            0
+# 9 C15                 6             0            0
+# 10 C16                 6             0            0
+# 11 C18                 6             0            0
+# 12 C19                 6             0            0
+# 13 C2                  6             0            0
+# 14 C20                 6             0            0
+# 15 C21                 6             0            0
+
+cat("Summary saved to: Gene_Union_Summary.csv\n")
+
+
+#######################################
+#######################################
+#######################################
+#######################################
+#######################################
+#######################################
+
+
+
+#######################################
+# TYPE 2: ONE VS ALL COMPARISONS 
+#######################################
+
+# Define one vs all comparisons (4 comparisons)
+one_vs_all_comparisons <- list()
+for(treatment in treatment_names) {
+  other_treatments <- treatment_names[treatment_names != treatment]
+  one_vs_all_comparisons[[treatment]] <- list(
+    focal = treatment,
+    background = other_treatments,
+    label = paste0(treatment, "_vs_all")
+  )
+}
+
+cat("=== ONE VS ALL COMPARISONS ===\n")
+cat(paste("Number of comparisons:", length(one_vs_all_comparisons), "\n"))
+for(treatment in names(one_vs_all_comparisons)) {
+  comp <- one_vs_all_comparisons[[treatment]]
+  cat(sprintf("  %s vs [%s]\n", comp$focal, paste(comp$background, collapse = ", ")))
+}
+cat("\n")
+
+#######################################
+# HELPER FUNCTION
+#######################################
+
+get_common_clusters <- function(treatment1_name, treatment2_name) {
+  t1_combinations <- unique(projMCS7$treatment_cluster[projMCS7$treatment == treatment1_name])
+  t2_combinations <- unique(projMCS7$treatment_cluster[projMCS7$treatment == treatment2_name])
+  
+  t1_clusters <- gsub(paste0(treatment1_name, "_"), "", t1_combinations)
+  t2_clusters <- gsub(paste0(treatment2_name, "_"), "", t2_combinations)
+  
+  common <- intersect(t1_clusters, t2_clusters)
+  return(common)
+}
+
+# Helper for one vs all 
+get_clusters_for_treatment <- function(treatment_name) {
+  treatment_combinations <- unique(projMCS7$treatment_cluster[projMCS7$treatment == treatment_name])
+  clusters <- gsub(paste0(treatment_name, "_"), "", treatment_combinations)
+  return(clusters)
+}
+
+
+#######################################
+#######################################
+
+
+# Initialize results tracking
+one_vs_all_results <- data.frame(
+  Focal_Treatment = character(),
+  Background_Treatments = character(),
+  Cluster = character(),
+  N_Focal_Cells = integer(),
+  N_Background_Cells = integer(),
+  N_Markers = integer(),
+  Status = character(),
+  stringsAsFactors = FALSE
+)
+
+for(treatment in names(one_vs_all_comparisons)) {
+  
+  comp <- one_vs_all_comparisons[[treatment]]
+  focal <- comp$focal
+  background <- comp$background
+  comp_label <- comp$label
+  
+  cat(paste("\n===========================================\n"))
+  cat(paste("COMPARISON:", focal, "vs ALL OTHERS [", paste(background, collapse = ", "), "]\n"))
+  cat(paste("===========================================\n\n"))
+  
+  # Get clusters where focal treatment is present
+  focal_clusters <- get_clusters_for_treatment(focal)
+  
+  if(length(focal_clusters) == 0) {
+    cat("  No clusters found for focal treatment\n\n")
+    next
+  }
+  
+  cat(paste("Clusters with", focal, ":", length(focal_clusters), "\n\n"))
+  
+  for(cluster in focal_clusters) {
+    
+    cat(paste("  Cluster:", cluster))
+    
+    # Subset to cluster
+    clusterSubset <- projMCS7[projMCS7$Clusters %in% cluster]
+    
+    # Check if all background treatments present
+    treatments_in_cluster <- unique(clusterSubset$treatment)
+    background_present <- background[background %in% treatments_in_cluster]
+    
+    if(length(background_present) == 0) {
+      cat(" | No background treatments present | SKIPPED\n")
+      next
+    }
+    
+    # Count cells
+    n_focal <- sum(clusterSubset$treatment == focal)
+    n_background <- sum(clusterSubset$treatment %in% background_present)
+    
+    cat(paste(" | Cells:", focal, "=", n_focal, 
+              "vs [", paste(background_present, collapse = ","), "] =", n_background))
+    
+    if(n_focal < 25 || n_background < 25) {
+      cat(" | SKIPPED (insufficient cells)\n")
+      
+      one_vs_all_results <- rbind(one_vs_all_results, data.frame(
+        Focal_Treatment = focal,
+        Background_Treatments = paste(background_present, collapse = ","),
+        Cluster = cluster,
+        N_Focal_Cells = n_focal,
+        N_Background_Cells = n_background,
+        N_Markers = 0,
+        Status = "Insufficient cells",
+        stringsAsFactors = FALSE
+      ))
+      next
+    }
+    
+    # Perform differential test
+    cat(" | Testing...")
+    
+    markerTest <- tryCatch({
+      getMarkerFeatures(
+        ArchRProj = clusterSubset,
+        useMatrix = "GeneScoreMatrix",
+        groupBy = "treatment",
+        testMethod = "wilcoxon",
+        bias = c("TSSEnrichment", "log10(nFrags)"),
+        useGroups = focal,
+        bgdGroups = background_present  # Multiple background groups!
+      )
+    }, error = function(e) {
+      cat(" ERROR:", e$message, "\n")
+      return(NULL)
+    })
+    
+    if(is.null(markerTest)) {
+      one_vs_all_results <- rbind(one_vs_all_results, data.frame(
+        Focal_Treatment = focal,
+        Background_Treatments = paste(background_present, collapse = ","),
+        Cluster = cluster,
+        N_Focal_Cells = n_focal,
+        N_Background_Cells = n_background,
+        N_Markers = 0,
+        Status = "Test failed",
+        stringsAsFactors = FALSE
+      ))
+      next
+    }
+    
+    # Get markers
+    markerList <- getMarkers(markerTest, cutOff = "FDR <= 0.01 & abs(Log2FC) >= 1.25")
+    
+    if(focal %in% names(markerList)) {
+      markers <- markerList[[focal]]
+      
+      if(nrow(markers) > 0) {
+        # Save markers with clear naming
+        filename <- paste0(focal, "_vs_all_", cluster, "_markers.csv")
+        write.csv(markers, file = filename, row.names = TRUE)
+        cat(paste(" | Found", nrow(markers), "markers | SAVED\n"))
+        
+        one_vs_all_results <- rbind(one_vs_all_results, data.frame(
+          Focal_Treatment = focal,
+          Background_Treatments = paste(background_present, collapse = ","),
+          Cluster = cluster,
+          N_Focal_Cells = n_focal,
+          N_Background_Cells = n_background,
+          N_Markers = nrow(markers),
+          Status = "Complete",
+          stringsAsFactors = FALSE
+        ))
+      } else {
+        cat(" | No significant markers\n")
+        
+        one_vs_all_results <- rbind(one_vs_all_results, data.frame(
+          Focal_Treatment = focal,
+          Background_Treatments = paste(background_present, collapse = ","),
+          Cluster = cluster,
+          N_Focal_Cells = n_focal,
+          N_Background_Cells = n_background,
+          N_Markers = 0,
+          Status = "No significant markers",
+          stringsAsFactors = FALSE
+        ))
+      }
+    } else {
+      cat(" | No markers returned\n")
+      
+      one_vs_all_results <- rbind(one_vs_all_results, data.frame(
+        Focal_Treatment = focal,
+        Background_Treatments = paste(background_present, collapse = ","),
+        Cluster = cluster,
+        N_Focal_Cells = n_focal,
+        N_Background_Cells = n_background,
+        N_Markers = 0,
+        Status = "No markers returned",
+        stringsAsFactors = FALSE
+      ))
+    }
+  }
+  
+  cat("\n")
+}
+
+
+# Save results summary
+write.csv(one_vs_all_results, "One_vs_All_Comparison_Summary.csv", row.names = FALSE)
+
+# Print summary statistics
+cat("SUMMARY STATISTICS:\n")
+cat("-------------------\n")
+cat(paste("Total comparisons attempted:", nrow(one_vs_all_results), "\n"))
+cat(paste("Successful comparisons:", sum(one_vs_all_results$Status == "Complete"), "\n"))
+# Successful comparisons: 0 
+cat(paste("Comparisons with markers:", sum(one_vs_all_results$N_Markers > 0), "\n"))
+cat(paste("Total markers found:", sum(one_vs_all_results$N_Markers), "\n"))
+cat("\n")
+
+# Summary by focal treatment
+focal_summary <- one_vs_all_results %>%
+  group_by(Focal_Treatment) %>%
+  summarise(
+    N_Clusters = n(),
+    N_With_Markers = sum(N_Markers > 0),
+    Total_Markers = sum(N_Markers),
+    Mean_Markers = round(mean(N_Markers[N_Markers > 0]), 1),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Markers))
+
+cat("Markers by focal treatment:\n")
+print(focal_summary)
+cat("\n")
+
+# Summary by cluster
+cluster_summary_onevsall <- one_vs_all_results %>%
+  group_by(Cluster) %>%
+  summarise(
+    N_Comparisons = n(),
+    N_With_Markers = sum(N_Markers > 0),
+    Total_Markers = sum(N_Markers),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Total_Markers))
+
+cat("Markers by cluster (top 15):\n")
+print(head(cluster_summary_onevsall, 15))
+cat("\n")
+
+cat("Results summary saved to: One_vs_All_Comparison_Summary.csv\n\n")
+
+
+#######################################
+# SAVE PROJECT
+#######################################
+
+saveArchRProject(ArchRProj = projMCS7, 
+                 outputDirectory = "/Volumes/DataBox/Save-ProjMCS7", 
+                 load = FALSE)
+
+cat("\nAnalysis complete!\n")
