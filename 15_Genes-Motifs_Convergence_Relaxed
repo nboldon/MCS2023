@@ -1,0 +1,123 @@
+setwd("/Volumes/DataBox/Final_Analysis_Convergence")
+
+# Load required libraries
+library(dplyr)
+library(tidyr)
+
+# Read in your data files
+genes <- read.csv("convergent_genes_summary_relaxed_phase2.csv", stringsAsFactors = FALSE)
+motifs <- read.csv("Motif_TxComps_byCluster.csv", stringsAsFactors = FALSE)
+
+# Parse the comparisons column in genes (contains multiple comparisons)
+genes_expanded <- genes %>%
+  separate_rows(comparisons, sep = ",\\s*") %>%
+  mutate(comparisons = trimws(comparisons))
+
+print(paste("Total DA marker genes:", nrow(genes)))
+# "Total DA marker genes: 103"
+print(paste("Total gene-comparison pairs:", nrow(genes_expanded)))
+# "Total gene-comparison pairs: 103"
+print(paste("Total DA motif-comparison pairs:", nrow(motifs)))
+# "Total DA motif-comparison pairs: 36"
+cat("\n")
+
+# Match genes to motifs by joining on comparison
+# This shows which DA genes and DA motifs co-occur in the same treatment comparison
+gene_motif_pairs <- genes_expanded %>%
+  inner_join(motifs, 
+             by = c("comparisons" = "Comparison"),
+             suffix = c("_gene", "_motif"),
+             relationship = "many-to-many") %>%
+  select(
+    gene_name = name_gene,
+    TF_motif = name_motif,
+    comparison = comparisons,
+    cluster = Cluster,
+    gene_log2fc = mean_log2fc,
+    gene_fdr = mean_fdr,
+    motif_FDR = FDR,
+    motif_MeanDiff = MeanDiff,
+    gene_n_occurrences = n_total_occurrences,
+    gene_cell_types = cell_types,
+    gene_clusters = clusters_involved
+  ) %>%
+  arrange(comparison, gene_name, TF_motif)
+
+print("=== DA Marker Genes with DA TF Motifs in Same Comparison ===")
+print(head(gene_motif_pairs, 20))
+cat("\n")
+cat("Total gene-motif pairs:", nrow(gene_motif_pairs), "\n")
+# Total gene-motif pairs: 149 
+cat("Unique marker genes:", n_distinct(gene_motif_pairs$gene_name), "\n")
+# Unique marker genes: 17 
+cat("Unique TF motifs:", n_distinct(gene_motif_pairs$TF_motif), "\n")
+# Unique TF motifs: 33 
+cat("Unique comparisons:", n_distinct(gene_motif_pairs$comparison), "\n\n")
+# Unique comparisons: 4 
+
+# Summary by comparison: which genes and motifs are DA together
+comparison_summary <- gene_motif_pairs %>%
+  group_by(comparison) %>%
+  summarise(
+    n_gene_motif_pairs = n(),
+    n_genes = n_distinct(gene_name),
+    n_motifs = n_distinct(TF_motif),
+    genes = paste(unique(gene_name), collapse = ", "),
+    motifs = paste(unique(TF_motif), collapse = ", ")
+  ) %>%
+  arrange(desc(n_gene_motif_pairs))
+
+print("=== Summary by Treatment Comparison ===")
+print(comparison_summary)
+cat("\n")
+
+# Summary by gene: which TF motifs are DA when each gene is DA
+gene_summary <- gene_motif_pairs %>%
+  group_by(gene_name) %>%
+  summarise(
+    n_comparisons = n_distinct(comparison),
+    n_associated_motifs = n_distinct(TF_motif),
+    comparisons = paste(unique(comparison), collapse = "; "),
+    associated_TF_motifs = paste(unique(TF_motif), collapse = "; "),
+    mean_gene_log2fc = mean(gene_log2fc, na.rm = TRUE)
+  ) %>%
+  arrange(desc(n_associated_motifs))
+
+print("=== Summary by Gene (Marker genes with DA TF motifs) ===")
+print(gene_summary)
+cat("\n")
+
+# Summary by motif: which genes are DA when each TF motif is DA
+motif_summary <- gene_motif_pairs %>%
+  group_by(TF_motif) %>%
+  summarise(
+    n_comparisons = n_distinct(comparison),
+    n_associated_genes = n_distinct(gene_name),
+    comparisons = paste(unique(comparison), collapse = "; "),
+    associated_genes = paste(unique(gene_name), collapse = "; "),
+    mean_motif_MeanDiff = mean(motif_MeanDiff, na.rm = TRUE)
+  ) %>%
+  arrange(desc(n_associated_genes))
+
+print("=== Summary by TF Motif (Motifs associated with DA genes) ===")
+print(head(motif_summary, 20))
+cat("\n")
+
+# Create a comparison matrix showing genes vs motifs
+# This is useful for visualization
+comparison_matrix <- gene_motif_pairs %>%
+  select(comparison, gene_name, TF_motif) %>%
+  distinct() %>%
+  mutate(present = 1) %>%
+  pivot_wider(
+    names_from = TF_motif,
+    values_from = present,
+    values_fill = 0
+  )
+
+# Export results
+write.csv(gene_motif_pairs, "DA_genes_motifs_by_comparison.csv", row.names = FALSE)
+write.csv(comparison_summary, "summary_by_comparison.csv", row.names = FALSE)
+write.csv(gene_summary, "summary_by_gene.csv", row.names = FALSE)
+write.csv(motif_summary, "summary_by_motif.csv", row.names = FALSE)
+write.csv(comparison_matrix, "gene_motif_matrix_by_comparison.csv", row.names = FALSE)
