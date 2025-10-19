@@ -1,0 +1,123 @@
+
+setwd("/Volumes/DataBox/Final_Analysis_Convergence")
+
+# Load required libraries
+library(dplyr)
+library(tidyr)
+
+# Option 1: Create the data directly in R
+small_genes <- data.frame(
+  name = c("Krtap11-1", "Krtap11-1", "Krtap11-1", "Krtap11-1", "Krtap11-1", 
+           "Krtap11-1", "Krtap11-1", "Rnaset2a", "Rnaset2a", "Rnaset2a"),
+  comparisons = c("t1_vs_t3", "t1_vs_t4", "t3_vs_t2", "t1_vs_t3", "t1_vs_t4", 
+                  "t3_vs_t1", "t4_vs_t1", "t4_vs_t1", "t1_vs_t4", "t4_vs_t1"),
+  cell_types = c("oligo", "oligo", "glutPrecursor", "C3", "C3", 
+                 "C3", "C22", "glutPrecursor", "C17", "C17"),
+  clusters = c("Krtap11-1", "Krtap11-1", "Krtap11-1", "Krtap11-1", "Krtap11-1", 
+               "Krtap11-1", "Krtap11-1", "Rnaset2a", "Rnaset2a", "Rnaset2a"),
+  stringsAsFactors = FALSE
+)
+
+# Option 2: Or read from a CSV file if you have it saved
+# small_genes <- read.csv("small_gene_list.csv", stringsAsFactors = FALSE)
+
+# Read the motifs data
+motifs <- read.csv("Motif_TxComps_byCluster.csv", stringsAsFactors = FALSE)
+
+print(paste("Number of gene entries:", nrow(small_genes)))
+print(paste("Unique genes:", n_distinct(small_genes$name)))
+print(paste("Number of motif entries:", nrow(motifs)))
+cat("\n")
+
+# Match small gene set with motifs based on comparison
+gene_motif_matches <- small_genes %>%
+  inner_join(motifs, 
+             by = c("comparisons" = "Comparison"),
+             relationship = "many-to-many") %>%
+  select(
+    gene_name = name.x,
+    TF_motif = name.y,
+    comparison = comparisons,
+    gene_cell_type = cell_types,
+    gene_cluster = clusters,
+    motif_cluster = Cluster,
+    motif_FDR = FDR,
+    motif_MeanDiff = MeanDiff
+  ) %>%
+  arrange(gene_name, comparison, TF_motif)
+
+print("=== Small Gene Set Matched with DA TF Motifs ===")
+print(gene_motif_matches)
+cat("\n")
+cat("Total gene-motif pairs:", nrow(gene_motif_matches), "\n")
+cat("Unique genes:", n_distinct(gene_motif_matches$gene_name), "\n")
+cat("Unique motifs:", n_distinct(gene_motif_matches$TF_motif), "\n\n")
+
+# Summary by gene
+gene_summary <- gene_motif_matches %>%
+  group_by(gene_name) %>%
+  summarise(
+    n_comparisons = n_distinct(comparison),
+    n_associated_motifs = n_distinct(TF_motif),
+    comparisons = paste(unique(comparison), collapse = "; "),
+    cell_types = paste(unique(gene_cell_type), collapse = "; "),
+    associated_TF_motifs = paste(unique(TF_motif), collapse = "; ")
+  ) %>%
+  arrange(desc(n_associated_motifs))
+
+print("=== Summary by Gene ===")
+print(gene_summary)
+cat("\n")
+
+# Summary by comparison
+comparison_summary <- gene_motif_matches %>%
+  group_by(comparison) %>%
+  summarise(
+    n_genes = n_distinct(gene_name),
+    n_motifs = n_distinct(TF_motif),
+    genes = paste(unique(gene_name), collapse = ", "),
+    motifs = paste(unique(TF_motif), collapse = ", ")
+  ) %>%
+  arrange(desc(n_motifs))
+
+print("=== Summary by Comparison ===")
+print(comparison_summary)
+cat("\n")
+
+# Summary by motif
+motif_summary <- gene_motif_matches %>%
+  group_by(TF_motif) %>%
+  summarise(
+    n_genes = n_distinct(gene_name),
+    n_comparisons = n_distinct(comparison),
+    genes = paste(unique(gene_name), collapse = ", "),
+    comparisons = paste(unique(comparison), collapse = "; "),
+    mean_motif_MeanDiff = mean(motif_MeanDiff, na.rm = TRUE)
+  ) %>%
+  arrange(desc(n_genes))
+
+print("=== Summary by TF Motif ===")
+print(motif_summary)
+cat("\n")
+
+# Check which gene-comparison pairs have NO matching motifs
+genes_without_matches <- small_genes %>%
+  anti_join(motifs, by = c("comparisons" = "Comparison")) %>%
+  distinct(name, comparisons, cell_types, .keep_all = TRUE)
+
+if(nrow(genes_without_matches) > 0) {
+  print("=== Gene-Comparison Pairs WITHOUT Matching DA Motifs ===")
+  print(genes_without_matches)
+  cat("\n")
+} else {
+  cat("All gene-comparison pairs have matching motifs!\n\n")
+}
+
+# Export results
+write.csv(gene_motif_matches, "small_geneset_motif_matches.csv", row.names = FALSE)
+write.csv(gene_summary, "small_geneset_summary_by_gene.csv", row.names = FALSE)
+write.csv(comparison_summary, "small_geneset_summary_by_comparison.csv", row.names = FALSE)
+write.csv(motif_summary, "small_geneset_summary_by_motif.csv", row.names = FALSE)
+
+cat("Results exported to CSV files!\n")
+
