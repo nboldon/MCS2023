@@ -1,0 +1,129 @@
+setwd("/Volumes/DataBox/Final_Analysis_Convergence")
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+# Read the Excel file
+gene_data <- read_excel("shared_genes_analysis_relaxed_convergent-phase1.xlsx")
+
+# Verify the data was loaded correctly
+cat("Data loaded successfully!\n")
+cat("Dimensions:", nrow(gene_data), "rows x", ncol(gene_data), "columns\n")
+cat("Column names:", paste(colnames(gene_data), collapse = ", "), "\n\n")
+
+# Define cluster to cell type mapping
+cluster_mapping <- list(
+  "C1" = "astroPrecursor",
+  "C2" = "oligo",
+  "C3" = "oligo",
+  "C4" = "glutOligo",
+  "C5" = "oligoPrecursor",
+  "C6" = "oligoPrecursor",
+  "C7" = "astroPrecursor",
+  "C8" = "astro",
+  "C9" = "astroPrecursor",
+  "C10" = "microglia",
+  "C11" = "microglia",
+  "C12" = "endo",
+  "C13" = "endo",
+  "C14" = "endo",
+  "C15" = "glutPrecursor",
+  "C16" = "glutPrecursor",
+  "C17" = "glutPrecursor",
+  "C18" = "glut",
+  "C19" = "glut",
+  "C20" = "glutPrecursor",
+  "C21" = "glut",
+  "C22" = "gaba",
+  "C23" = "gaba",
+  "C24" = "glutAstro",
+  "C25" = "glutPrecursor"
+)
+
+# Extract information from source_file
+gene_data <- gene_data %>%
+  mutate(
+    # Extract comparison (t1_vs_t3, etc.)
+    comparison = str_extract(source_file, "t\\d+_vs_t\\d+"),
+    # Extract cluster or cell type
+    cluster_or_celltype = str_extract(source_file, "(?<=_)[^_]+(?=_relaxed)"),
+    # Determine if it's a cluster (starts with C) or cell type
+    is_cluster = str_detect(cluster_or_celltype, "^C\\d+"),
+    # For clusters, map to cell type; for cell types, keep as is
+    cell_type = ifelse(is_cluster, 
+                       unlist(cluster_mapping[cluster_or_celltype]), 
+                       cluster_or_celltype)
+  )
+
+# Function to get reverse comparison
+get_reverse_comparison <- function(comp) {
+  parts <- str_split(comp, "_vs_")[[1]]
+  paste0(parts[2], "_vs_", parts[1])
+}
+
+# Step 1: Find genes with bidirectional treatment unions
+bidirectional_genes <- gene_data %>%
+  group_by(name, comparison, cell_type) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  mutate(reverse_comp = sapply(comparison, get_reverse_comparison)) %>%
+  group_by(name, cell_type) %>%
+  filter(any(comparison %in% reverse_comp)) %>%
+  ungroup() %>%
+  distinct(name, cell_type) %>%
+  mutate(has_bidirectional = TRUE)
+
+# Step 2: Find genes present in both cluster and corresponding cell type
+cluster_celltype_genes <- gene_data %>%
+  group_by(name, comparison, cell_type) %>%
+  summarise(
+    has_cluster = any(is_cluster),
+    has_celltype = any(!is_cluster),
+    .groups = "drop"
+  ) %>%
+  filter(has_cluster & has_celltype) %>%
+  distinct(name, comparison, cell_type) %>%
+  mutate(has_both = TRUE)
+
+# Step 3: Combine both criteria
+convergent_genes <- bidirectional_genes %>%
+  inner_join(cluster_celltype_genes, by = c("name", "cell_type")) %>%
+  select(name, cell_type, comparison)
+
+# Step 4: Filter original data for convergent genes
+final_data <- gene_data %>%
+  inner_join(convergent_genes, by = c("name", "cell_type", "comparison")) %>%
+  arrange(name, comparison, cell_type)
+
+# Display summary
+cat("Total genes in original data:", length(unique(gene_data$name)), "\n")
+cat("Genes meeting bidirectional criteria:", nrow(bidirectional_genes), "\n")
+cat("Genes found in both cluster and cell type:", nrow(cluster_celltype_genes), "\n")
+cat("Final convergent genes:", length(unique(final_data$name)), "\n")
+cat("Total rows in final output:", nrow(final_data), "\n")
+
+# Export results
+write.csv(final_data, "convergent_genes_validated.csv", row.names = FALSE)
+
+# Also export a summary of unique genes with their cell types and comparisons
+gene_summary <- final_data %>%
+  group_by(name) %>%
+  summarise(
+    n_comparisons = n_distinct(comparison),
+    comparisons = paste(unique(comparison), collapse = "; "),
+    n_cell_types = n_distinct(cell_type),
+    cell_types = paste(unique(cell_type), collapse = "; "),
+    n_clusters = sum(is_cluster),
+    clusters = paste(unique(cluster_or_celltype[is_cluster]), collapse = "; ")
+  ) %>%
+  arrange(desc(n_comparisons))
+
+write.csv(gene_summary, "convergent_genes_summary.csv", row.names = FALSE)
+
+# Print preview
+cat("\n=== Preview of Final Data ===\n")
+print(head(final_data))
+cat("\n=== Preview of Gene Summary ===\n")
+print(head(gene_summary))
+
