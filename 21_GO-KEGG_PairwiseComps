@@ -1,0 +1,198 @@
+
+# Load required libraries
+library(dplyr)
+library(clusterProfiler)
+library(org.Mm.eg.db)  
+library(enrichplot)
+library(ggplot2)
+
+# Set working directory
+setwd("/Volumes/DataBox/Final_Analysis_Convergence")
+
+# Read in the gene-motif match files
+relaxed_matches <- read.csv("DA_genes_relaxed_motifs_by_comparison.csv", 
+                            stringsAsFactors = FALSE)
+conservative_matches <- read.csv("small_geneset_motif_matches_conservative.csv", 
+                                 stringsAsFactors = FALSE)
+
+# Extract unique genes that have corresponding motifs
+relaxed_genes <- unique(relaxed_matches$gene_name)
+conservative_genes <- unique(conservative_matches$gene_name)
+
+# Combine both gene lists (or analyze separately)
+all_genes_with_motifs <- unique(c(relaxed_genes, conservative_genes))
+
+print(paste("Relaxed gene list:", length(relaxed_genes), "genes"))
+print(paste("Conservative gene list:", length(conservative_genes), "genes"))
+print(paste("Combined unique genes:", length(all_genes_with_motifs), "genes"))
+cat("\n")
+
+# Convert gene symbols to Entrez IDs (required for KEGG)
+gene_entrez <- bitr(all_genes_with_motifs, 
+                    fromType = "SYMBOL",
+                    toType = "ENTREZID",
+                    OrgDb = org.Mm.eg.db)
+
+print("Gene symbol to Entrez ID conversion:")
+print(gene_entrez)
+cat("\n")
+
+# ============ GO Enrichment Analysis ============
+
+# Biological Process
+go_bp <- enrichGO(gene = gene_entrez$ENTREZID,
+                  OrgDb = org.Mm.eg.db,
+                  ont = "BP",
+                  pAdjustMethod = "BH",
+                  pvalueCutoff = 0.05,
+                  qvalueCutoff = 0.05,
+                  readable = TRUE)
+
+print("=== GO Biological Process Enrichment ===")
+print(head(go_bp, 20))
+cat("\n")
+
+# Molecular Function
+go_mf <- enrichGO(gene = gene_entrez$ENTREZID,
+                  OrgDb = org.Mm.eg.db,
+                  ont = "MF",
+                  pAdjustMethod = "BH",
+                  pvalueCutoff = 0.05,
+                  qvalueCutoff = 0.05,
+                  readable = TRUE)
+
+print("=== GO Molecular Function Enrichment ===")
+print(head(go_mf, 20))
+cat("\n")
+
+# Cellular Component
+go_cc <- enrichGO(gene = gene_entrez$ENTREZID,
+                  OrgDb = org.Mm.eg.db,
+                  ont = "CC",
+                  pAdjustMethod = "BH",
+                  pvalueCutoff = 0.05,
+                  qvalueCutoff = 0.05,
+                  readable = TRUE)
+
+print("=== GO Cellular Component Enrichment ===")
+print(head(go_cc, 20))
+cat("\n")
+
+# ============ KEGG Pathway Analysis ============
+
+kegg <- enrichKEGG(gene = gene_entrez$ENTREZID,
+                   organism = 'mmu',  # 'mmu' for mouse, 'hsa' for human
+                   pvalueCutoff = 0.05,
+                   qvalueCutoff = 0.05)
+
+# Convert gene IDs back to symbols for readability
+if(!is.null(kegg) && nrow(kegg@result) > 0) {
+  kegg <- setReadable(kegg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID")
+  print("=== KEGG Pathway Enrichment ===")
+  print(head(kegg, 20))
+} else {
+  print("No significant KEGG pathways found.")
+}
+cat("\n")
+
+# ============ Export Results ============
+
+# Export GO results
+if(!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  write.csv(as.data.frame(go_bp), "GO_BP_enrichment_results.csv", row.names = FALSE)
+}
+
+if(!is.null(go_mf) && nrow(go_mf@result) > 0) {
+  write.csv(as.data.frame(go_mf), "GO_MF_enrichment_results.csv", row.names = FALSE)
+}
+
+if(!is.null(go_cc) && nrow(go_cc@result) > 0) {
+  write.csv(as.data.frame(go_cc), "GO_CC_enrichment_results.csv", row.names = FALSE)
+}
+
+# Export KEGG results
+if(!is.null(kegg) && nrow(kegg@result) > 0) {
+  write.csv(as.data.frame(kegg), "KEGG_pathway_enrichment_results.csv", row.names = FALSE)
+}
+
+# ============ Visualizations ============
+
+# Dot plot for GO BP
+if(!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  p1 <- dotplot(go_bp, showCategory = 20, title = "GO Biological Process")
+  ggsave("GO_BP_dotplot.pdf", p1, width = 10, height = 8)
+  print(p1)
+}
+
+# Dot plot for KEGG
+if(!is.null(kegg) && nrow(kegg@result) > 0) {
+  # Check how many significant terms we have
+  n_kegg_terms <- nrow(kegg@result)
+  n_show <- min(20, n_kegg_terms)
+  
+  tryCatch({
+    p2 <- dotplot(kegg, showCategory = n_show, title = "KEGG Pathways")
+    ggsave("KEGG_dotplot.pdf", p2, width = 10, height = 8)
+    print(p2)
+  }, error = function(e) {
+    cat("Could not create KEGG dotplot. Creating barplot instead.\n")
+    p2_alt <- barplot(kegg, showCategory = n_show, title = "KEGG Pathways")
+    ggsave("KEGG_barplot.pdf", p2_alt, width = 10, height = 8)
+    print(p2_alt)
+  })
+}
+
+# Bar plot for GO BP
+if(!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  p3 <- barplot(go_bp, showCategory = 20, title = "GO Biological Process")
+  ggsave("GO_BP_barplot.pdf", p3, width = 10, height = 8)
+}
+
+# Gene-Concept Network for GO BP (shows which genes are in which terms)
+if(!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  p4 <- cnetplot(go_bp, categorySize = "pvalue", foldChange = NULL)
+  ggsave("GO_BP_gene_concept_network.pdf", p4, width = 12, height = 10)
+}
+
+# ============ Separate Analysis for Each Gene List (Optional) ============
+
+# If you want to compare enrichment between relaxed and conservative lists:
+if(length(relaxed_genes) > 0) {
+  relaxed_entrez <- bitr(relaxed_genes, 
+                         fromType = "SYMBOL",
+                         toType = "ENTREZID",
+                         OrgDb = org.Mm.eg.db)
+  
+  go_bp_relaxed <- enrichGO(gene = relaxed_entrez$ENTREZID,
+                            OrgDb = org.Mm.eg.db,
+                            ont = "BP",
+                            pAdjustMethod = "BH",
+                            pvalueCutoff = 0.05,
+                            qvalueCutoff = 0.05,
+                            readable = TRUE)
+  
+  if(!is.null(go_bp_relaxed) && nrow(go_bp_relaxed@result) > 0) {
+    write.csv(as.data.frame(go_bp_relaxed), 
+              "GO_BP_relaxed_only.csv", row.names = FALSE)
+  }
+}
+
+if(length(conservative_genes) > 0) {
+  conservative_entrez <- bitr(conservative_genes, 
+                              fromType = "SYMBOL",
+                              toType = "ENTREZID",
+                              OrgDb = org.Mm.eg.db)
+  
+  go_bp_conservative <- enrichGO(gene = conservative_entrez$ENTREZID,
+                                 OrgDb = org.Mm.eg.db,
+                                 ont = "BP",
+                                 pAdjustMethod = "BH",
+                                 pvalueCutoff = 0.05,
+                                 qvalueCutoff = 0.05,
+                                 readable = TRUE)
+  
+  if(!is.null(go_bp_conservative) && nrow(go_bp_conservative@result) > 0) {
+    write.csv(as.data.frame(go_bp_conservative), 
+              "GO_BP_conservative_only.csv", row.names = FALSE)
+  }
+}
