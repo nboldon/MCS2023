@@ -1,0 +1,391 @@
+
+# R Script to:
+# 1. Identify marker genes (in all 4 treatments per cluster) with corresponding motifs
+# 2. Create detailed summary with motif enrichment values
+
+# Load required libraries
+library(readxl)
+library(dplyr)
+library(readr)
+library(stringr)
+library(tidyr)
+
+# Set input and output file paths
+marker_gene_file <- "/Users/2023laptop/Library/Mobile Documents/com~apple~CloudDocs/PhD/Dissertation/Ch-3_Doctoral-Research/Supplementary_Files/Appendix_File-5.xls"
+motif_file <- "/Volumes/DataBox/ProjMCS7/motifs_common_to_all_treatments.csv"
+output_file <- "/Volumes/DataBox/ProjMCS7/marker_genes_with_motifs_by_cluster.csv"
+summary_file <- "/Volumes/DataBox/ProjMCS7/marker_genes_with_motifs_by_cluster_summary.csv"
+detailed_summary_file <- "/Volumes/DataBox/ProjMCS7/marker_genes_motifs_detailed_summary.csv"
+
+################################################################################
+# PART 1: Identify marker genes with corresponding motifs
+################################################################################
+
+cat(paste(rep("=", 80), collapse = ""), "\n")
+cat("STEP 1: Loading motif data\n")
+cat(paste(rep("=", 80), collapse = ""), "\n")
+
+# Load the motif data (already filtered to motifs in all 4 treatments)
+motifs_df <- read_csv(motif_file, show_col_types = FALSE)
+cat("Loaded", nrow(motifs_df), "motifs common to all 4 treatments\n")
+
+# Extract gene names from motif names (GeneName_Number format)
+motifs_df$Gene <- str_replace(motifs_df$Motif, "_\\d+$", "")
+motif_gene_lookup <- motifs_df %>% 
+  select(Gene, Motif) %>%
+  mutate(Gene_Upper = toupper(Gene))
+cat("These motifs correspond to", length(unique(motifs_df$Gene)), "unique genes\n\n")
+
+cat(paste(rep("=", 80), collapse = ""), "\n")
+cat("STEP 2: Processing marker genes by cluster\n")
+cat(paste(rep("=", 80), collapse = ""), "\n\n")
+
+# Get all sheet names
+sheet_names <- excel_sheets(marker_gene_file)
+cat("Found", length(sheet_names), "cluster sheets\n")
+
+# Process each cluster sheet
+all_results <- list()
+summary_by_cluster <- list()
+
+for (sheet in sheet_names) {
+  # Extract cluster name (e.g., "C1" from "C1_Combined_GeneMarkers_Comps")
+  cluster_name <- str_split(sheet, "_")[[1]][1]
+  
+  cat("\n", cluster_name, ": Processing ", sheet, "\n", sep = "")
+  cat(paste(rep("-", 80), collapse = ""), "\n")
+  
+  df <- read_excel(marker_gene_file, sheet = sheet)
+  
+  # Find genes that are present in all 4 treatments
+  # A gene is in all 4 treatments if it has non-NA values for all T1-T4 Log2FC AND FDR
+  genes_in_all_treatments <- df %>%
+    filter(!is.na(T1_Log2FC) & !is.na(T1_FDR) &
+             !is.na(T2_Log2FC) & !is.na(T2_FDR) &
+             !is.na(T3_Log2FC) & !is.na(T3_FDR) &
+             !is.na(T4_Log2FC) & !is.na(T4_FDR))
+  
+  cat("  Total genes:", nrow(df), "\n")
+  cat("  Genes in all 4 treatments:", nrow(genes_in_all_treatments), "\n")
+  
+  if (nrow(genes_in_all_treatments) == 0) {
+    summary_by_cluster[[length(summary_by_cluster) + 1]] <- data.frame(
+      Cluster = cluster_name,
+      Total_Genes = nrow(df),
+      Genes_In_All_4_Treatments = 0,
+      Genes_With_Motifs = 0,
+      Genes_With_Enriched_Motifs = 0
+    )
+    next
+  }
+  
+  # Match with motif genes (case-insensitive matching)
+  genes_in_all_treatments$Gene_Upper <- toupper(genes_in_all_treatments$name)
+  genes_in_all_treatments$Has_Motif <- genes_in_all_treatments$Gene_Upper %in% motif_gene_lookup$Gene_Upper
+  
+  genes_with_motifs <- genes_in_all_treatments %>%
+    filter(Has_Motif == TRUE)
+  
+  cat("  Genes with corresponding motifs:", nrow(genes_with_motifs), "\n")
+  
+  # Now check if those motifs are enriched (value > 0) in THIS cluster across all 4 treatments
+  # Get the cluster columns from the motif data
+  cluster_motif_cols <- paste0(cluster_name, "_t", 1:4)
+  
+  # Check if these columns exist in motif data
+  if (all(cluster_motif_cols %in% colnames(motifs_df))) {
+    genes_with_enriched_motifs <- list()
+    
+    for (i in 1:nrow(genes_with_motifs)) {
+      row <- genes_with_motifs[i, ]
+      gene_name <- row$name
+      gene_upper <- row$Gene_Upper
+      
+      # Find all motifs for this gene
+      gene_motifs <- motif_gene_lookup %>%
+        filter(Gene_Upper == gene_upper)
+      
+      # Check if ANY of the motifs for this gene are enriched in this cluster (>0 in all 4 treatments)
+      is_enriched <- FALSE
+      for (j in 1:nrow(gene_motifs)) {
+        motif_name <- gene_motifs$Motif[j]
+        motif_data <- motifs_df %>%
+          filter(Motif == motif_name)
+        
+        if (nrow(motif_data) > 0) {
+          # Check if motif is enriched (>0) in this cluster for all 4 treatments
+          enrichment_values <- motif_data[1, cluster_motif_cols]
+          if (all(enrichment_values > 0)) {
+            is_enriched <- TRUE
+            break
+          }
+        }
+      }
+      
+      if (is_enriched) {
+        genes_with_enriched_motifs[[length(genes_with_enriched_motifs) + 1]] <- row
+      }
+    }
+    
+    if (length(genes_with_enriched_motifs) > 0) {
+      genes_with_enriched_motifs_df <- bind_rows(genes_with_enriched_motifs)
+      
+      # CRITICAL FIX: Ensure all genes have non-NA values in all 4 treatments
+      # This is the key fix - filter BEFORE any other operations
+      genes_with_enriched_motifs_df <- genes_with_enriched_motifs_df %>%
+        filter(!is.na(T1_Log2FC) & !is.na(T1_FDR) &
+                 !is.na(T2_Log2FC) & !is.na(T2_FDR) &
+                 !is.na(T3_Log2FC) & !is.na(T3_FDR) &
+                 !is.na(T4_Log2FC) & !is.na(T4_FDR))
+      
+      if (nrow(genes_with_enriched_motifs_df) > 0) {
+        cat("  Genes with ENRICHED motifs in", cluster_name, ":", nrow(genes_with_enriched_motifs_df), "\n")
+      } else {
+        cat("  Genes with ENRICHED motifs in", cluster_name, ": 0 (after NA filtering)\n")
+      }
+    } else {
+      cat("  Genes with ENRICHED motifs in", cluster_name, ": 0\n")
+    }
+    
+    if (length(genes_with_enriched_motifs) > 0 && nrow(genes_with_enriched_motifs_df) > 0) {
+      
+      # Add cluster column
+      genes_with_enriched_motifs_df$Cluster <- cluster_name
+      
+      # Add enriched motif names for each gene
+      enriched_motif_names <- c()
+      for (i in 1:nrow(genes_with_enriched_motifs_df)) {
+        gene_upper <- genes_with_enriched_motifs_df$Gene_Upper[i]
+        gene_motifs <- motif_gene_lookup %>%
+          filter(Gene_Upper == gene_upper)
+        
+        # Find which motifs are enriched for this gene in this cluster
+        enriched_motifs_for_gene <- c()
+        for (j in 1:nrow(gene_motifs)) {
+          motif_name <- gene_motifs$Motif[j]
+          motif_data <- motifs_df %>%
+            filter(Motif == motif_name)
+          
+          if (nrow(motif_data) > 0) {
+            enrichment_values <- motif_data[1, cluster_motif_cols]
+            if (all(enrichment_values > 0)) {
+              enriched_motifs_for_gene <- c(enriched_motifs_for_gene, motif_name)
+            }
+          }
+        }
+        
+        enriched_motif_names <- c(enriched_motif_names,
+                                  paste(enriched_motifs_for_gene, collapse = "; "))
+      }
+      
+      genes_with_enriched_motifs_df$Enriched_Motifs <- enriched_motif_names
+      
+      # Convert all Log2FC and FDR columns to numeric
+      genes_with_enriched_motifs_df <- genes_with_enriched_motifs_df %>%
+        mutate(T1_Log2FC = as.numeric(T1_Log2FC),
+               T1_FDR = as.numeric(T1_FDR),
+               T2_Log2FC = as.numeric(T2_Log2FC),
+               T2_FDR = as.numeric(T2_FDR),
+               T3_Log2FC = as.numeric(T3_Log2FC),
+               T3_FDR = as.numeric(T3_FDR),
+               T4_Log2FC = as.numeric(T4_Log2FC),
+               T4_FDR = as.numeric(T4_FDR))
+      
+      # FINAL SAFETY CHECK: Remove any rows that somehow still have NAs
+      genes_with_enriched_motifs_df <- genes_with_enriched_motifs_df %>%
+        filter(!is.na(T1_Log2FC) & !is.na(T1_FDR) &
+                 !is.na(T2_Log2FC) & !is.na(T2_FDR) &
+                 !is.na(T3_Log2FC) & !is.na(T3_FDR) &
+                 !is.na(T4_Log2FC) & !is.na(T4_FDR))
+      
+      # Reorder columns
+      genes_with_enriched_motifs_df <- genes_with_enriched_motifs_df %>%
+        select(Cluster, name, Enriched_Motifs,
+               T1_Log2FC, T1_FDR,
+               T2_Log2FC, T2_FDR,
+               T3_Log2FC, T3_FDR,
+               T4_Log2FC, T4_FDR)
+      
+      all_results[[length(all_results) + 1]] <- genes_with_enriched_motifs_df
+      enriched_count <- nrow(genes_with_enriched_motifs_df)
+    } else {
+      enriched_count <- 0
+    }
+  } else {
+    cat("  Warning: Cluster columns not found in motif data\n")
+    enriched_count <- 0
+  }
+  
+  # Summary for this cluster
+  summary_by_cluster[[length(summary_by_cluster) + 1]] <- data.frame(
+    Cluster = cluster_name,
+    Total_Genes = nrow(df),
+    Genes_In_All_4_Treatments = nrow(genes_in_all_treatments),
+    Genes_With_Motifs = nrow(genes_with_motifs),
+    Genes_With_Enriched_Motifs = enriched_count
+  )
+}
+
+cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+cat("STEP 3: Combining results and saving\n")
+cat(paste(rep("=", 80), collapse = ""), "\n\n")
+
+# Combine all results
+if (length(all_results) > 0) {
+  combined_results <- bind_rows(all_results)
+  
+  # ONE MORE FINAL CHECK: Ensure no NAs made it through
+  combined_results <- combined_results %>%
+    filter(!is.na(T1_Log2FC) & !is.na(T1_FDR) &
+             !is.na(T2_Log2FC) & !is.na(T2_FDR) &
+             !is.na(T3_Log2FC) & !is.na(T3_FDR) &
+             !is.na(T4_Log2FC) & !is.na(T4_FDR))
+  
+  cat("Total marker genes with enriched motifs across all clusters:", nrow(combined_results), "\n\n")
+  
+  # Summary by cluster
+  summary_df <- bind_rows(summary_by_cluster) %>%
+    arrange(desc(Genes_With_Enriched_Motifs))
+  
+  cat("SUMMARY BY CLUSTER:\n")
+  cat(paste(rep("-", 80), collapse = ""), "\n")
+  print(summary_df, row.names = FALSE)
+  
+  cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+  cat("SAMPLE RESULTS (first 10 genes with enriched motifs):\n")
+  cat(paste(rep("=", 80), collapse = ""), "\n")
+  for (i in 1:min(10, nrow(combined_results))) {
+    row <- combined_results[i, ]
+    cat("\n", row$Cluster, " | ", row$name, "\n", sep = "")
+    cat("  Motif(s): ", row$Enriched_Motifs, "\n", sep = "")
+    cat(sprintf("  Log2FC: T1=%.2f, T2=%.2f, T3=%.2f, T4=%.2f\n",
+                row$T1_Log2FC, row$T2_Log2FC, row$T3_Log2FC, row$T4_Log2FC))
+  }
+  
+  cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+  cat("KEY STATISTICS:\n")
+  cat(paste(rep("=", 80), collapse = ""), "\n")
+  cat("Total unique genes with enriched motifs:", length(unique(combined_results$name)), "\n")
+  cat("Clusters with enriched gene-motif matches:",
+      sum(summary_df$Genes_With_Enriched_Motifs > 0), "\n")
+  cat("Total gene-cluster combinations:", nrow(combined_results), "\n\n")
+  
+  # Top genes appearing in multiple clusters
+  gene_counts <- combined_results %>%
+    count(name, sort = TRUE)
+  cat("Top genes appearing in multiple clusters:\n")
+  print(head(gene_counts, 10), row.names = FALSE)
+  
+  # Save results
+  write.csv(combined_results, output_file, row.names = FALSE)
+  cat("\n✓ Full results saved to:", output_file, "\n")
+  
+  write.csv(summary_df, summary_file, row.names = FALSE)
+  cat("✓ Summary saved to:", summary_file, "\n\n")
+  
+  ################################################################################
+  # PART 2: Create detailed summary with motif enrichment values
+  ################################################################################
+  
+  cat(paste(rep("=", 80), collapse = ""), "\n")
+  cat("STEP 4: Creating detailed summary with motif enrichment values\n")
+  cat(paste(rep("=", 80), collapse = ""), "\n\n")
+  
+  # Create detailed summary
+  detailed_summary <- list()
+  
+  for (i in 1:nrow(combined_results)) {
+    row <- combined_results[i, ]
+    cluster <- row$Cluster
+    gene <- row$name
+    enriched_motifs <- row$Enriched_Motifs
+    
+    # Split motifs if multiple (separated by semicolon and space)
+    motif_list <- str_trim(str_split(enriched_motifs, ";")[[1]])
+    
+    # Get enrichment values for each motif in this cluster
+    for (motif in motif_list) {
+      # Find this motif in the motif data
+      motif_data <- motifs_df %>%
+        filter(Motif == motif)
+      
+      if (nrow(motif_data) > 0) {
+        # Get the enrichment values for this cluster across all 4 treatments
+        cluster_cols <- paste0(cluster, "_t", 1:4)
+        
+        enrichment_values <- motif_data[1, cluster_cols]
+        
+        detailed_summary[[length(detailed_summary) + 1]] <- data.frame(
+          Cluster = cluster,
+          Gene = gene,
+          Motif = motif,
+          Motif_Enrichment_t1 = as.numeric(enrichment_values[[paste0(cluster, "_t1")]]),
+          Motif_Enrichment_t2 = as.numeric(enrichment_values[[paste0(cluster, "_t2")]]),
+          Motif_Enrichment_t3 = as.numeric(enrichment_values[[paste0(cluster, "_t3")]]),
+          Motif_Enrichment_t4 = as.numeric(enrichment_values[[paste0(cluster, "_t4")]]),
+          Gene_Log2FC_t1 = as.numeric(row$T1_Log2FC),
+          Gene_Log2FC_t2 = as.numeric(row$T2_Log2FC),
+          Gene_Log2FC_t3 = as.numeric(row$T3_Log2FC),
+          Gene_Log2FC_t4 = as.numeric(row$T4_Log2FC),
+          Gene_FDR_t1 = as.numeric(row$T1_FDR),
+          Gene_FDR_t2 = as.numeric(row$T2_FDR),
+          Gene_FDR_t3 = as.numeric(row$T3_FDR),
+          Gene_FDR_t4 = as.numeric(row$T4_FDR),
+          stringsAsFactors = FALSE
+        )
+      }
+    }
+  }
+  
+  # Combine all rows into a single dataframe
+  detailed_summary_df <- bind_rows(detailed_summary)
+  cat("Created detailed summary with", nrow(detailed_summary_df), "gene-motif-cluster combinations\n\n")
+  
+  # Save detailed summary
+  write_csv(detailed_summary_df, detailed_summary_file)
+  cat("✓ Detailed summary saved to:", detailed_summary_file, "\n\n")
+  
+  # Display sample
+  cat(paste(rep("=", 80), collapse = ""), "\n")
+  cat("SAMPLE DETAILED SUMMARY (first 10 entries):\n")
+  cat(paste(rep("=", 80), collapse = ""), "\n\n")
+  for (i in 1:min(10, nrow(detailed_summary_df))) {
+    row <- detailed_summary_df[i, ]
+    cat(row$Cluster, "|", row$Gene, "→", row$Motif, "\n")
+    cat(sprintf("  Motif Enrichment: t1=%.2f, t2=%.2f, t3=%.2f, t4=%.2f\n",
+                row$Motif_Enrichment_t1, row$Motif_Enrichment_t2, 
+                row$Motif_Enrichment_t3, row$Motif_Enrichment_t4))
+    cat(sprintf("  Gene Log2FC:      t1=%.2f, t2=%.2f, t3=%.2f, t4=%.2f\n\n",
+                row$Gene_Log2FC_t1, row$Gene_Log2FC_t2, 
+                row$Gene_Log2FC_t3, row$Gene_Log2FC_t4))
+  }
+  
+  # Summary by cluster
+  cat(paste(rep("=", 80), collapse = ""), "\n")
+  cat("Summary by cluster:\n")
+  cat(paste(rep("-", 80), collapse = ""), "\n")
+  cluster_summary <- detailed_summary_df %>%
+    group_by(Cluster) %>%
+    summarise(
+      Unique_Genes = n_distinct(Gene),
+      Unique_Motifs = n_distinct(Motif),
+      .groups = 'drop'
+    ) %>%
+    arrange(desc(Unique_Genes))
+  print(cluster_summary)
+  
+  cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+  cat("FINAL SUMMARY STATISTICS:\n")
+  cat(paste(rep("=", 80), collapse = ""), "\n")
+  cat("Total clusters with matches:", nrow(cluster_summary), "\n")
+  cat("Total unique genes:", n_distinct(detailed_summary_df$Gene), "\n")
+  cat("Total unique motifs:", n_distinct(detailed_summary_df$Motif), "\n")
+  cat("Total gene-motif pairs:", nrow(detailed_summary_df), "\n")
+  
+} else {
+  cat("\nNo genes with enriched motifs found!\n")
+}
+
+cat("\n", paste(rep("=", 80), collapse = ""), "\n")
+cat("✓ Analysis complete!\n")
+cat(paste(rep("=", 80), collapse = ""), "\n")
