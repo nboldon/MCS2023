@@ -1,0 +1,145 @@
+
+
+# R Script to merge motif enrichment data found across all 4 treatment groups
+# Keeps individual cluster enrichment values from each treatment group
+
+# Load required libraries
+library(readxl)
+library(dplyr)
+library(tidyr)
+
+# Set input and output file paths
+input_file <- "/Users/2023laptop/Library/Mobile Documents/com~apple~CloudDocs/PhD/Dissertation/Ch-3_Doctoral-Research/Supplementary_Files/Approach3-motif_enrichment_byCluster_2025-03-26.xls"
+output_file <- "/Volumes/DataBox/ProjMCS7/motifs_common_to_all_treatments.csv"
+motif_counts_file <- "/Volumes/DataBox/ProjMCS7/motifs_per_cluster_summary.csv"
+
+# Get all sheet names
+sheet_names <- excel_sheets(input_file)
+cat("Found", length(sheet_names), "treatment groups:\n")
+print(sheet_names)
+cat("\n")
+
+# Read all sheets into a list
+treatment_data <- list()
+for (i in seq_along(sheet_names)) {
+  sheet <- sheet_names[i]
+  cat("Reading sheet:", sheet, "\n")
+  
+  df <- read_excel(input_file, sheet = sheet)
+  
+  # Get cluster column names (all columns except "Motif")
+  cluster_cols <- setdiff(colnames(df), "Motif")
+  
+  # Rename cluster columns to include treatment number
+  treatment_name <- paste0("t", i)
+  new_colnames <- c("Motif", paste0(cluster_cols, "_", treatment_name))
+  colnames(df) <- new_colnames
+  
+  treatment_data[[i]] <- df
+  cat("  -", nrow(df), "motifs with", length(cluster_cols), "clusters\n")
+}
+cat("\n")
+
+# Find motifs common to all treatments
+# Start with the first treatment
+merged_data <- treatment_data[[1]]
+
+# Iteratively merge with each subsequent treatment
+for (i in 2:length(treatment_data)) {
+  cat("Merging with treatment", i, "...\n")
+  merged_data <- inner_join(
+    merged_data, 
+    treatment_data[[i]], 
+    by = "Motif"
+  )
+  cat("  -", nrow(merged_data), "motifs remaining after merge\n")
+}
+cat("\n")
+
+# Reorder columns: Motif first, then cluster columns grouped together (all t1-t4 for C1, then all t1-t4 for C2, etc.)
+# Get all unique cluster names (without treatment suffix)
+all_cols <- colnames(merged_data)
+cluster_names <- unique(gsub("_t[0-9]+$", "", all_cols[all_cols != "Motif"]))
+cluster_names <- sort(cluster_names)
+
+# Build column order: Motif, then for each cluster all treatments
+col_order <- "Motif"
+for (cluster in cluster_names) {
+  for (i in 1:length(sheet_names)) {
+    treatment_name <- paste0("t", i)
+    col_order <- c(col_order, paste0(cluster, "_", treatment_name))
+  }
+}
+
+merged_data <- merged_data %>%
+  select(all_of(col_order))
+
+# Count enriched motifs per cluster (considering motif enriched if value > 0 in any treatment)
+# Create a summary showing how many motifs are enriched in each cluster across treatments
+cluster_summary <- data.frame()
+
+for (cluster in cluster_names) {
+  # Get all columns for this cluster across treatments
+  cluster_cols <- paste0(cluster, "_t", 1:length(sheet_names))
+  
+  # Count motifs with any non-zero value for this cluster
+  enriched_count <- sum(apply(merged_data[, cluster_cols], 1, function(x) any(x > 0)))
+  
+  cluster_summary <- rbind(cluster_summary, 
+                           data.frame(Cluster = cluster, 
+                                      Enriched_Motifs = enriched_count))
+}
+
+cluster_summary <- cluster_summary %>%
+  arrange(desc(Enriched_Motifs))
+
+# Summary statistics
+cat(paste(rep("=", 80), collapse = ""), "\n")
+cat("RESULTS SUMMARY:\n")
+cat(paste(rep("=", 80), collapse = ""), "\n")
+cat("Total motifs common to all", length(sheet_names), "treatment groups:", nrow(merged_data), "\n")
+# Total motifs common to all 4 treatment groups: 884 
+cat("Total clusters:", length(cluster_names), "\n\n")
+
+cat("ENRICHED MOTIFS PER CLUSTER (motifs with value > 0 in any treatment):\n")
+cat(paste(rep("-", 80), collapse = ""), "\n")
+print(cluster_summary, row.names = FALSE)
+cat("\n")
+# Cluster Enriched_Motifs
+# C20             462
+# C23             400
+# C12             372
+# C8             349
+# C18             329
+# C22             324
+# C10             319
+# C14             294
+# C11             288
+# C3             271
+# C24             267
+# C16             262
+# C21             260
+# C6             257
+# C4             228
+# C19             213
+# C17             179
+# C15              85
+# C1              55
+# C13              31
+# C2               0
+# C25               0
+# C5               0
+# C7               0
+# C9               0
+
+cat("First few rows of merged data:\n")
+print(head(merged_data[, 1:min(10, ncol(merged_data))]))
+cat("\n")
+
+# Save to CSV
+write.csv(merged_data, output_file, row.names = FALSE)
+cat("Merged motifs saved to:", output_file, "\n")
+
+# Save cluster summary
+write.csv(cluster_summary, motif_counts_file, row.names = FALSE)
+cat("Cluster summary saved to:", motif_counts_file, "\n")
