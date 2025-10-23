@@ -1,0 +1,111 @@
+
+# R Script to merge peaks found across all 4 treatment groups
+# Keeps individual Log2FC and FDR values from each treatment group
+
+# Load required libraries
+library(readxl)
+library(dplyr)
+
+# Set input and output file paths
+input_file <- "/Users/2023laptop/Library/Mobile Documents/com~apple~CloudDocs/PhD/Dissertation/Ch-3_Doctoral-Research/Supplementary_Files/marker-Peaks_subsetByTreatment_groupByCluster_Summary_2025-03-26.xls"
+output_file <- "/Volumes/DataBox/ProjMCS7/peaks_common_to_all_treatments.csv"
+cluster_counts_file <- "/Volumes/DataBox/ProjMCS7/peaks_per_cluster_summary.csv"
+
+# Get all sheet names
+sheet_names <- excel_sheets(input_file)
+cat("Found", length(sheet_names), "treatment groups:\n")
+print(sheet_names)
+cat("\n")
+
+# Read all sheets into a list
+treatment_data <- list()
+for (i in seq_along(sheet_names)) {
+  sheet <- sheet_names[i]
+  cat("Reading sheet:", sheet, "\n")
+  
+  df <- read_excel(input_file, sheet = sheet)
+  
+  # Create a unique peak identifier
+  df$peak_id <- paste(df$group_name, df$seqnames, df$start, df$end, sep = "_")
+  
+  # Select and rename columns for this treatment
+  # Keep the identifying columns and rename Log2FC and FDR to include treatment number
+  treatment_name <- paste0("t", i)
+  df_selected <- df %>%
+    select(peak_id, group_name, seqnames, start, end, Log2FC, FDR) %>%
+    rename(!!paste0("Log2FC_", treatment_name) := Log2FC,
+           !!paste0("FDR_", treatment_name) := FDR)
+  
+  treatment_data[[i]] <- df_selected
+  cat("  -", nrow(df_selected), "peaks found\n")
+}
+cat("\n")
+
+# Find peaks common to all treatments
+# Start with the first treatment
+merged_data <- treatment_data[[1]]
+
+# Iteratively merge with each subsequent treatment
+for (i in 2:length(treatment_data)) {
+  cat("Merging with treatment", i, "...\n")
+  merged_data <- inner_join(
+    merged_data, 
+    treatment_data[[i]], 
+    by = c("peak_id", "group_name", "seqnames", "start", "end")
+  )
+  cat("  -", nrow(merged_data), "peaks remaining after merge\n")
+}
+cat("\n")
+
+# Remove the peak_id helper column before saving
+merged_data <- merged_data %>%
+  select(-peak_id)
+
+# Reorder columns: identifying columns first, then alternating Log2FC and FDR
+col_order <- c("group_name", "seqnames", "start", "end")
+for (i in 1:length(sheet_names)) {
+  treatment_name <- paste0("t", i)
+  col_order <- c(col_order, 
+                 paste0("Log2FC_", treatment_name),
+                 paste0("FDR_", treatment_name))
+}
+
+merged_data <- merged_data %>%
+  select(all_of(col_order))
+
+# Count peaks per cluster
+cluster_counts <- merged_data %>%
+  group_by(group_name) %>%
+  summarise(
+    peak_count = n(),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(peak_count))
+
+# Summary statistics
+cat(paste(rep("=", 80), collapse = ""), "\n")
+cat("RESULTS SUMMARY:\n")
+cat(paste(rep("=", 80), collapse = ""), "\n")
+cat("Total peaks common to all", length(sheet_names), "treatment groups:", nrow(merged_data), "\n\n")
+# 7580 
+
+cat("PEAKS PER CLUSTER:\n")
+cat(paste(rep("-", 80), collapse = ""), "\n")
+print(cluster_counts, n = Inf)
+cat("\n")
+# group_name peak_count
+# C3               6169
+# C6               1337
+# C4                 74
+
+cat("First few rows of merged data:\n")
+print(head(merged_data))
+cat("\n")
+
+# Save to CSV
+write.csv(merged_data, output_file, row.names = FALSE)
+cat("Merged peaks saved to:", output_file, "\n")
+
+# Save cluster counts
+write.csv(cluster_counts, cluster_counts_file, row.names = FALSE)
+cat("Cluster counts saved to:", cluster_counts_file, "\n")
