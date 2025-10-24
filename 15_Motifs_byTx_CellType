@@ -1,0 +1,147 @@
+# Load libraries
+library(ArchR)
+
+# Set up
+setwd("/Volumes/DataBox/ProjMCS7")
+addArchRGenome("mm10")
+addArchRThreads(threads = 6)
+
+# Load the ArchR project
+projMCS7 <- loadArchRProject(path = "/Volumes/DataBox/Save-ProjMCS7", force = FALSE, showLogo = FALSE)
+
+
+# Check what metadata columns exist
+colnames(getCellColData(projMCS7))
+
+####### TREATMENT ASSIGNMENT #######
+treatment <- projMCS7$Sample
+treatment <- gsub("C302_|C306_|C309_|C318_|C323_|C328_|C332_|C337_|C339_|C346_|C351_|C353_|C360_", "t1", treatment)
+treatment <- gsub("C304_|C308_|C312_|C349_|C315_|C321_|C324_|C355_|C327_|C330_|C333_|C358_|C336_|C342_|C348_|C362_", "t2", treatment)
+treatment <- gsub("C305_|C307_|C313_|C350_|C316_|C320_|C322_|C352_|C325_|C334_|C359_|C340_|C341_|C345_|C364_", "t3", treatment)
+treatment <- gsub("C301_|C303_|C310_|C314_|C319_|C335_|C338_|C344_|C354_|C356_|C361_|C363_", "t4", treatment)
+projMCS7$treatment <- treatment
+
+####### CELL TYPE ASSIGNMENT #######
+# Option 1: If cell_type already exists, you're good to go
+# Option 2: If you need to create it from Clusters, do something like:
+
+# Check if cell_type exists
+if (!"cell_type" %in% colnames(getCellColData(projMCS7))) {
+  # You'll need to map your cluster numbers to cell type names
+  # This is an EXAMPLE - adjust based on YOUR cluster assignments:
+  
+  cluster_to_celltype <- c(
+    "C1" = "AstroPrecursor",
+    "C2" = "Oligodendrocyte",
+    "C3" = "Oligodendrocyte",
+    "C4" = "GlutOligo",
+    "C5" = "OligoPrecursor",
+    "C6" = "OligoPrecursor",
+    "C7" = "AstroPrecursor",
+    "C8" = "Astrocyte",
+    "C9" = "AstroPrecursor",
+    "C10" = "Microglia",
+    "C11" = "Microglia",
+    "C12" = "Endo-Vasc",
+    "C13" = "Endo-Vasc",
+    "C14" = "Endo-Vasc",
+    "C15" = "GlutPrecursor",
+    "C16" = "GlutPrecursor",
+    "C17" = "GlutPrecursor",
+    "C18" = "Glutamatergic",
+    "C19" = "Glutamatergic",
+    "C20" = "GlutPrecursor",
+    "C21" = "Glutamatergic",
+    "C22" = "Gabaergic",
+    "C23" = "Gabaergic",
+    "C24" = "GlutAstro",
+    "C25" = "GlutPrecursor"
+  )
+  
+  # Assign cell types based on clusters
+  projMCS7$cell_type <- cluster_to_celltype[projMCS7$Clusters]
+}
+
+# Verify it worked
+table(projMCS7$cell_type)
+table(projMCS7$treatment)
+
+# Now continue with your loop...
+# Get unique cell types and treatments
+cell_types <- unique(projMCS7$cell_type)
+treatments <- unique(projMCS7$treatment)
+
+# Create output directory
+dir.create("motif_results_by_celltype", showWarnings = FALSE)
+
+# Loop through each treatment group
+for (treatment in treatments) {
+  
+  cat("\nProcessing treatment:", treatment, "\n")
+  
+  # Subset project by treatment
+  treatmentSubset <- projMCS7[projMCS7$treatment == treatment, ]
+  
+  # Get marker peaks by cell type for this treatment
+  markersPeaks <- getMarkerFeatures(
+    ArchRProj = treatmentSubset, 
+    useMatrix = "PeakMatrix", 
+    groupBy = "cell_type",
+    bias = c("TSSEnrichment", "log10(nFrags)"),
+    testMethod = "wilcoxon"
+  )
+  
+  # Get motif enrichment
+  enrichMotifs <- peakAnnoEnrichment(
+    seMarker = markersPeaks,
+    ArchRProj = treatmentSubset,
+    peakAnnotation = "Motif",
+    cutOff = "FDR <= 0.1 & abs(Log2FC) >= 0.5"
+  )
+  
+  # Loop through each cell type and save results
+  for (cell_type in cell_types) {
+    
+    tryCatch({
+      # Extract motif enrichment data for this cell type
+      motif_data <- as.data.frame(assay(enrichMotifs, "mlog10Padj"))
+      
+      # Check if this cell type column exists
+      if (cell_type %in% colnames(motif_data)) {
+        
+        # Get the motif names
+        motif_names <- rownames(motif_data)
+        
+        # Create dataframe with motif names and enrichment scores
+        cell_motifs <- data.frame(
+          Motif = motif_names,
+          mlog10Padj = motif_data[, cell_type],
+          stringsAsFactors = FALSE
+        )
+        
+        # Sort by enrichment (most enriched first)
+        cell_motifs <- cell_motifs[order(-cell_motifs$mlog10Padj), ]
+        
+        # Save to CSV
+        filename <- paste0("motif_results_by_celltype/", treatment, "_", 
+                           gsub(" ", "_", cell_type), "_motifs.csv")
+        write.csv(cell_motifs, filename, row.names = FALSE)
+        
+        cat("  Saved:", filename, "\n")
+      }
+      
+    }, error = function(e) {
+      cat("  Error with", treatment, cell_type, ":", e$message, "\n")
+    })
+  }
+  
+  # Optional: Save heatmap for this treatment
+  heatmap <- plotEnrichHeatmap(enrichMotifs, n = 7, transpose = TRUE)
+  plotPDF(heatmap, 
+          name = paste0(treatment, "_Motifs_Enriched_by_CellType_", Sys.Date()),
+          width = 8, height = 6, 
+          ArchRProj = treatmentSubset, 
+          addDOC = FALSE)
+}
+
+cat("\nDone! Motif lists saved in 'motif_results_by_celltype/' directory\n")
