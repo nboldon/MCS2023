@@ -1,0 +1,457 @@
+# ====================================================================
+# LOOP: RESCUE ANALYSIS FOR CELL TYPES (COMBINED CLUSTERS)
+# Processes cell type files (astro, oligo, etc.)
+# ====================================================================
+
+library(tidyverse)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(pheatmap)
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_byCellType_withRescue_GO-KEGG")
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+# Pattern to match cell type files
+# Examples: "astro_byTx_zscores_2025-01-16.csv", "oligo_byTx_zscores.csv"
+FILE_PATTERN <- "[a-z]+_byTx_zscores.*\\.csv$"  # Matches any word before _byTx
+
+# Choose your rescue criterion:
+CRITERION <- "strong_rescue"  # <--- CHANGE THIS
+
+# Thresholds
+DISTANCE_RATIO_THRESHOLD <- 0.5
+DIVERGENCE_THRESHOLD <- 0.5
+
+# GO/KEGG parameters
+P_VALUE_CUTOFF <- 0.05
+Q_VALUE_CUTOFF <- 0.2
+
+# Create output directory for organized results
+OUTPUT_DIR <- "celltype_rescue_results"
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR)
+}
+
+# ====================================================================
+# FIND ALL CELL TYPE FILES
+# ====================================================================
+
+# Get list of all cell type files
+all_files <- list.files(pattern = FILE_PATTERN)
+
+# Exclude cluster files (those starting with C followed by number)
+all_files <- all_files[!grepl("^C[0-9]+_", all_files)]
+
+if (length(all_files) == 0) {
+  stop("No cell type files found! Check your FILE_PATTERN.\n",
+       "Current pattern: ", FILE_PATTERN, "\n",
+       "Files in directory: ", paste(list.files(pattern = "csv$"), collapse = ", "))
+}
+
+cat("========================================\n")
+cat("FOUND", length(all_files), "CELL TYPE FILES\n")
+cat("========================================\n")
+cat(paste(all_files, collapse = "\n"))
+cat("\n========================================\n\n")
+
+# Extract cell type names from filenames
+cell_type_names <- gsub("(.*)_byTx.*", "\\1", all_files)
+
+# Create a summary data frame
+summary_results <- data.frame(
+  CellType = character(),
+  File = character(),
+  Total_Genes = integer(),
+  Basic_Rescue = integer(),
+  Strong_Rescue = integer(),
+  Direction_Rescue = integer(),
+  Cluster_Switch = integer(),
+  Selected_Genes = integer(),
+  GO_BP_Terms = integer(),
+  KEGG_Pathways = integer(),
+  Status = character(),
+  stringsAsFactors = FALSE
+)
+
+# ====================================================================
+# LOOP THROUGH EACH CELL TYPE
+# ====================================================================
+
+for (i in 1:length(all_files)) {
+  
+  file <- all_files[i]
+  cell_type <- cell_type_names[i]
+  
+  cat("\n")
+  cat("########################################\n")
+  cat("PROCESSING:", cell_type, "\n")
+  cat("File:", file, "\n")
+  cat("########################################\n\n")
+  
+  tryCatch({
+    
+    # ------------------------------------------------------------------
+    # 1. READ DATA
+    # ------------------------------------------------------------------
+    
+    data <- read.csv(file, row.names = 1)
+    cat("Loaded", nrow(data), "genes for", cell_type, "\n\n")
+    data$gene <- rownames(data)
+    
+    total_genes <- nrow(data)
+    
+    # ------------------------------------------------------------------
+    # 2. CALCULATE DISTANCES
+    # ------------------------------------------------------------------
+    
+    data$t1_t2_mean <- (data$t1 + data$t2) / 2
+    data$t4_to_baseline_dist <- abs(data$t4 - data$t1_t2_mean)
+    data$t4_to_t3_dist <- abs(data$t4 - data$t3)
+    data$t3_to_baseline_dist <- abs(data$t3 - data$t1_t2_mean)
+    data$rescue_score <- data$t4_to_t3_dist - data$t4_to_baseline_dist
+    data$distance_ratio <- data$t4_to_baseline_dist / (data$t4_to_t3_dist + 0.001)
+    data$t3_t4_divergent <- data$t4_to_t3_dist > DIVERGENCE_THRESHOLD
+    data$t4_matches_baseline_direction <- sign(data$t4) == sign(data$t1_t2_mean)
+    data$t1_t2_t4_correlation <- apply(data[, c("t1", "t2", "t4")], 1, 
+                                       function(x) cor(c(1, 2, 4), x))
+    
+    # ------------------------------------------------------------------
+    # 3. IDENTIFY RESCUE GENES
+    # ------------------------------------------------------------------
+    
+    # Basic rescue
+    rescue_genes_basic <- data %>%
+      filter(rescue_score > 0) %>%
+      arrange(desc(rescue_score))
+    
+    # Strong rescue
+    rescue_genes_strong <- data %>%
+      filter(
+        rescue_score > 0,
+        distance_ratio < DISTANCE_RATIO_THRESHOLD,
+        t3_t4_divergent == TRUE
+      ) %>%
+      arrange(desc(rescue_score))
+    
+    # Directional rescue
+    rescue_genes_direction <- data %>%
+      filter(
+        rescue_score > 0,
+        t4_matches_baseline_direction == TRUE,
+        t3_t4_divergent == TRUE
+      ) %>%
+      arrange(desc(rescue_score))
+    
+    # Cluster switch
+    rescue_genes_cluster <- data %>%
+      filter(
+        rescue_score > 0,
+        t1_t2_t4_correlation > 0.5,
+        t3_t4_divergent == TRUE,
+        distance_ratio < 0.7
+      ) %>%
+      arrange(desc(rescue_score))
+    
+    cat("RESCUE GENES:\n")
+    cat("  Basic:", nrow(rescue_genes_basic), "\n")
+    cat("  Strong:", nrow(rescue_genes_strong), "\n")
+    cat("  Direction:", nrow(rescue_genes_direction), "\n")
+    cat("  Cluster:", nrow(rescue_genes_cluster), "\n\n")
+    
+    # ------------------------------------------------------------------
+    # 4. SELECT GENES BASED ON CRITERION
+    # ------------------------------------------------------------------
+    
+    if (CRITERION == "basic_rescue") {
+      selected_genes <- rescue_genes_basic
+    } else if (CRITERION == "strong_rescue") {
+      selected_genes <- rescue_genes_strong
+    } else if (CRITERION == "direction_rescue") {
+      selected_genes <- rescue_genes_direction
+    } else if (CRITERION == "cluster_switch") {
+      selected_genes <- rescue_genes_cluster
+    }
+    
+    cat("Selected", nrow(selected_genes), "genes using criterion:", CRITERION, "\n\n")
+    
+    # ------------------------------------------------------------------
+    # 5. SAVE GENE LISTS
+    # ------------------------------------------------------------------
+    
+    # Create cell type-specific subdirectory
+    celltype_dir <- file.path(OUTPUT_DIR, cell_type)
+    if (!dir.exists(celltype_dir)) {
+      dir.create(celltype_dir)
+    }
+    
+    write.csv(selected_genes, 
+              file.path(celltype_dir, paste0(cell_type, "_rescue_genes_", CRITERION, ".csv")), 
+              row.names = TRUE)
+    
+    write.csv(rescue_genes_basic, 
+              file.path(celltype_dir, paste0(cell_type, "_rescue_genes_basic.csv")), 
+              row.names = TRUE)
+    
+    write.csv(rescue_genes_strong, 
+              file.path(celltype_dir, paste0(cell_type, "_rescue_genes_strong.csv")), 
+              row.names = TRUE)
+    
+    # ------------------------------------------------------------------
+    # 6. VISUALIZATION
+    # ------------------------------------------------------------------
+    
+    # Plot 1: Rescue score distribution
+    p1 <- ggplot(data, aes(x = rescue_score)) +
+      geom_histogram(bins = 30, fill = "purple", alpha = 0.7) +
+      geom_vline(xintercept = 0, linetype = "dashed", color = "darkgreen", size = 1) +
+      labs(title = paste(cell_type, "- Rescue Score Distribution"),
+           x = "Rescue Score",
+           y = "Number of Genes") +
+      theme_minimal()
+    
+    ggsave(file.path(celltype_dir, paste0(cell_type, "_rescue_distribution.pdf")), 
+           p1, width = 8, height = 6)
+    
+    # Plot 2: Distance comparison
+    selected_gene_names <- rownames(selected_genes)
+    data$is_selected <- rownames(data) %in% selected_gene_names
+    
+    p2 <- ggplot(data, aes(x = t4_to_baseline_dist, y = t4_to_t3_dist, color = is_selected)) +
+      geom_point(alpha = 0.6, size = 2) +
+      geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray30") +
+      scale_color_manual(values = c("gray70", "darkgreen"),
+                         labels = c("Other genes", "Rescue genes"),
+                         name = "") +
+      labs(title = paste(cell_type, "- Rescue Pattern"),
+           x = "Distance: t4 to t1/t2 baseline",
+           y = "Distance: t4 to t3") +
+      theme_minimal() +
+      theme(legend.position = "bottom")
+    
+    ggsave(file.path(celltype_dir, paste0(cell_type, "_distance_comparison.pdf")), 
+           p2, width = 8, height = 8)
+    
+    # Plot 3: Heatmap
+    if (nrow(selected_genes) > 0) {
+      n_genes <- min(50, nrow(selected_genes))
+      top_genes <- selected_genes %>%
+        arrange(desc(rescue_score)) %>%
+        head(n_genes)
+      
+      heatmap_data <- top_genes[, c("t1", "t2", "t3", "t4")]
+      
+      pdf(file.path(celltype_dir, paste0(cell_type, "_heatmap_top_genes.pdf")), 
+          width = 6, height = max(8, n_genes * 0.15))
+      pheatmap(heatmap_data,
+               cluster_cols = FALSE,
+               scale = "none",
+               color = colorRampPalette(c("purple", "white", "darkgreen"))(100),
+               main = paste(cell_type, "- Top Rescue Genes"),
+               fontsize_row = max(4, 10 - n_genes/10))
+      dev.off()
+    }
+    
+    # ------------------------------------------------------------------
+    # 7. GO/KEGG ENRICHMENT
+    # ------------------------------------------------------------------
+    
+    go_bp_count <- 0
+    kegg_count <- 0
+    
+    if (nrow(selected_genes) >= 5) {
+      
+      cat("Performing GO/KEGG enrichment...\n")
+      
+      gene_ids <- tryCatch({
+        bitr(selected_genes$gene, 
+             fromType = "SYMBOL",
+             toType = "ENTREZID", 
+             OrgDb = org.Mm.eg.db)
+      }, error = function(e) {
+        cat("Warning: Gene ID conversion failed\n")
+        data.frame()
+      })
+      
+      if (nrow(gene_ids) >= 5) {
+        
+        # GO Biological Process
+        go_bp <- tryCatch({
+          enrichGO(gene = gene_ids$ENTREZID,
+                   OrgDb = org.Mm.eg.db,
+                   ont = "BP",
+                   pAdjustMethod = "BH",
+                   pvalueCutoff = P_VALUE_CUTOFF,
+                   qvalueCutoff = Q_VALUE_CUTOFF,
+                   readable = TRUE)
+        }, error = function(e) NULL)
+        
+        if (!is.null(go_bp) && nrow(go_bp) > 0) {
+          write.csv(as.data.frame(go_bp), 
+                    file.path(celltype_dir, paste0(cell_type, "_GO_BP.csv")), 
+                    row.names = FALSE)
+          
+          p_bp <- dotplot(go_bp, showCategory = 20) +
+            ggtitle(paste(cell_type, "- GO Biological Process"))
+          ggsave(file.path(celltype_dir, paste0(cell_type, "_GO_BP_dotplot.pdf")), 
+                 p_bp, width = 10, height = 8)
+          
+          go_bp_count <- nrow(go_bp)
+          cat("✓ GO BP:", go_bp_count, "terms\n")
+        }
+        
+        # KEGG enrichment
+        kegg <- tryCatch({
+          enrichKEGG(gene = gene_ids$ENTREZID,
+                     organism = "mmu",
+                     pvalueCutoff = P_VALUE_CUTOFF,
+                     pAdjustMethod = "BH",
+                     qvalueCutoff = Q_VALUE_CUTOFF)
+        }, error = function(e) NULL)
+        
+        if (!is.null(kegg) && nrow(kegg) > 0) {
+          write.csv(as.data.frame(kegg), 
+                    file.path(celltype_dir, paste0(cell_type, "_KEGG.csv")), 
+                    row.names = FALSE)
+          
+          p_kegg <- dotplot(kegg, showCategory = 20) +
+            ggtitle(paste(cell_type, "- KEGG Pathways"))
+          ggsave(file.path(celltype_dir, paste0(cell_type, "_KEGG_dotplot.pdf")), 
+                 p_kegg, width = 10, height = 8)
+          
+          kegg_count <- nrow(kegg)
+          cat("✓ KEGG:", kegg_count, "pathways\n")
+        }
+      }
+    } else {
+      cat("Skipping enrichment (too few genes)\n")
+    }
+    
+    # ------------------------------------------------------------------
+    # 8. UPDATE SUMMARY
+    # ------------------------------------------------------------------
+    
+    summary_results <- rbind(summary_results, data.frame(
+      CellType = cell_type,
+      File = file,
+      Total_Genes = total_genes,
+      Basic_Rescue = nrow(rescue_genes_basic),
+      Strong_Rescue = nrow(rescue_genes_strong),
+      Direction_Rescue = nrow(rescue_genes_direction),
+      Cluster_Switch = nrow(rescue_genes_cluster),
+      Selected_Genes = nrow(selected_genes),
+      GO_BP_Terms = go_bp_count,
+      KEGG_Pathways = kegg_count,
+      Status = "Success",
+      stringsAsFactors = FALSE
+    ))
+    
+    cat("✓", cell_type, "complete!\n\n")
+    
+  }, error = function(e) {
+    cat("✗ ERROR processing", cell_type, ":\n")
+    cat("  ", as.character(e), "\n\n")
+    
+    summary_results <<- rbind(summary_results, data.frame(
+      CellType = cell_type,
+      File = file,
+      Total_Genes = NA,
+      Basic_Rescue = NA,
+      Strong_Rescue = NA,
+      Direction_Rescue = NA,
+      Cluster_Switch = NA,
+      Selected_Genes = NA,
+      GO_BP_Terms = NA,
+      KEGG_Pathways = NA,
+      Status = paste("Error:", as.character(e)),
+      stringsAsFactors = FALSE
+    ))
+  })
+  
+}
+
+# ====================================================================
+# FINAL SUMMARY
+# ====================================================================
+
+cat("\n")
+cat("########################################\n")
+cat("ALL CELL TYPES PROCESSED!\n")
+cat("########################################\n\n")
+
+# Save summary table
+write.csv(summary_results, 
+          file.path(OUTPUT_DIR, "celltype_analysis_summary.csv"), 
+          row.names = FALSE)
+
+cat("SUMMARY OF RESULTS:\n")
+cat("-------------------\n")
+print(summary_results)
+
+cat("\n\nOUTPUT ORGANIZATION:\n")
+cat("-------------------\n")
+cat("All results saved in:", OUTPUT_DIR, "/\n")
+cat("Each cell type has its own subdirectory\n\n")
+
+# Create summary visualizations
+if (nrow(summary_results[summary_results$Status == "Success", ]) > 0) {
+  
+  # Plot 1: Number of rescue genes by cell type
+  p_summary <- ggplot(summary_results, 
+                      aes(x = reorder(CellType, -Strong_Rescue), y = Strong_Rescue)) +
+    geom_bar(stat = "identity", fill = "purple") +
+    geom_text(aes(label = Strong_Rescue), vjust = -0.5, size = 4) +
+    labs(title = "Number of Rescue Genes by Cell Type",
+         subtitle = paste("Criterion:", CRITERION),
+         x = "Cell Type",
+         y = "Number of Rescue Genes") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  ggsave(file.path(OUTPUT_DIR, "summary_rescue_genes_by_celltype.pdf"), 
+         p_summary, width = 10, height = 6)
+  
+  # Plot 2: GO/KEGG enrichment summary
+  enrichment_data <- summary_results %>%
+    dplyr::select(CellType, GO_BP_Terms, KEGG_Pathways) %>%
+    tidyr::pivot_longer(cols = c(GO_BP_Terms, KEGG_Pathways),
+                        names_to = "Type",
+                        values_to = "Count")
+  
+  p_enrichment <- ggplot(enrichment_data, 
+                         aes(x = reorder(CellType, -Count), y = Count, fill = Type)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = c("GO_BP_Terms" = "darkgreen", 
+                                 "KEGG_Pathways" = "purple"),
+                      labels = c("GO BP Terms", "KEGG Pathways")) +
+    labs(title = "Enrichment Results by Cell Type",
+         x = "Cell Type",
+         y = "Number of Terms/Pathways",
+         fill = "") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "bottom")
+  
+  ggsave(file.path(OUTPUT_DIR, "summary_enrichment_by_celltype.pdf"), 
+         p_enrichment, width = 10, height = 6)
+  
+  cat("Summary plots saved!\n\n")
+}
+
+# Identify cell types with most rescue genes
+top_celltypes <- summary_results %>%
+  filter(Status == "Success") %>%
+  arrange(desc(Strong_Rescue))
+
+cat("\nCELL TYPES RANKED BY RESCUE GENES:\n")
+cat("----------------------------------\n")
+print(top_celltypes[, c("CellType", "Strong_Rescue", "GO_BP_Terms", "KEGG_Pathways")])
+
+cat("\n########################################\n")
+cat("ANALYSIS COMPLETE!\n")
+cat("Check the", OUTPUT_DIR, "directory for all results\n")
+cat("########################################\n")
+
