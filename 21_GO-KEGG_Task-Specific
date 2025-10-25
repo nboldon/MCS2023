@@ -1,0 +1,611 @@
+# ====================================================================
+# GO AND KEGG ENRICHMENT ANALYSIS - TASK-SPECIFIC VERSION
+# Analyzes each task (A, B, C, D) separately to preserve difficulty progression
+# Processes all rescue scenarios: Strong/Basic rescue × different FDR thresholds
+# ====================================================================
+
+library(tidyverse)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(viridis)
+library(ggplot2)
+library(patchwork)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+# Set your base working directory
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+# Define input directories with TASK-SPECIFIC gene lists
+INPUT_DIRS <- list(
+  strong_FDR05 = "rescue_behavior_correlations_strong_FDR-0-05_TASK_SPECIFIC",
+  strong_FDR10 = "rescue_behavior_correlations_strong_FDR-0-1_TASK_SPECIFIC",
+  basic_FDR05 = "rescue_behavior_correlations_basic_FDR-0-05_TASK_SPECIFIC",
+  basic_FDR10 = "rescue_behavior_correlations_basic_FDR-0-1_TASK_SPECIFIC"
+)
+
+# Create master output directory
+OUTPUT_DIR <- "GO_KEGG_Enrichment_Results_TASK_SPECIFIC"
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+# Define tasks
+TASKS <- c("TaskA", "TaskB", "TaskC", "TaskD")
+
+# GO/KEGG parameters
+P_VALUE_CUTOFF <- 0.05
+Q_VALUE_CUTOFF <- 0.2
+MIN_GENES_FOR_ENRICHMENT <- 5
+
+# Visualization parameters
+VIRIDIS_PALETTE <- "viridis"  # Options: "viridis", "plasma", "inferno", "magma", "cividis"
+TOP_N_TERMS <- 20
+CREATE_ENRICHMENT_MAPS <- FALSE  # Set to TRUE to create network plots (memory intensive!)
+
+cat("========================================\n")
+cat("GO/KEGG ENRICHMENT ANALYSIS - TASK-SPECIFIC\n")
+cat("========================================\n")
+cat("Analyzing", length(INPUT_DIRS), "scenarios:\n")
+for (name in names(INPUT_DIRS)) {
+  cat("  -", name, ":", INPUT_DIRS[[name]], "\n")
+}
+cat("\nTask progression (difficulty): A < B < C < D\n")
+cat("Output directory:", OUTPUT_DIR, "\n")
+cat("Parameters:\n")
+cat("  - p-value cutoff:", P_VALUE_CUTOFF, "\n")
+cat("  - q-value cutoff:", Q_VALUE_CUTOFF, "\n")
+cat("  - Viridis palette:", VIRIDIS_PALETTE, "\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# FUNCTIONS
+# ====================================================================
+
+#' Perform GO enrichment for all three ontologies
+perform_go_enrichment <- function(gene_symbols, output_prefix) {
+  
+  results <- list()
+  
+  # Convert gene symbols to Entrez IDs
+  gene_ids <- tryCatch({
+    bitr(gene_symbols, 
+         fromType = "SYMBOL",
+         toType = "ENTREZID", 
+         OrgDb = org.Mm.eg.db,
+         drop = TRUE)
+  }, error = function(e) {
+    cat("Warning: Gene ID conversion failed\n")
+    return(data.frame())
+  })
+  
+  if (nrow(gene_ids) < MIN_GENES_FOR_ENRICHMENT) {
+    cat("  Too few genes converted (", nrow(gene_ids), "). Skipping enrichment.\n")
+    return(NULL)
+  }
+  
+  cat("  Converted", nrow(gene_ids), "genes to Entrez IDs\n")
+  
+  # GO Biological Process
+  cat("  Running GO Biological Process...\n")
+  go_bp <- tryCatch({
+    enrichGO(gene = gene_ids$ENTREZID,
+             OrgDb = org.Mm.eg.db,
+             ont = "BP",
+             pAdjustMethod = "BH",
+             pvalueCutoff = P_VALUE_CUTOFF,
+             qvalueCutoff = Q_VALUE_CUTOFF,
+             readable = TRUE)
+  }, error = function(e) NULL)
+  
+  if (!is.null(go_bp) && nrow(go_bp) > 0) {
+    results$GO_BP <- go_bp
+    write.csv(as.data.frame(go_bp), 
+              paste0(output_prefix, "_GO_BP.csv"), 
+              row.names = FALSE)
+    cat("    ✓", nrow(go_bp), "GO BP terms found\n")
+  } else {
+    cat("    No significant GO BP terms\n")
+  }
+  
+  # GO Molecular Function
+  cat("  Running GO Molecular Function...\n")
+  go_mf <- tryCatch({
+    enrichGO(gene = gene_ids$ENTREZID,
+             OrgDb = org.Mm.eg.db,
+             ont = "MF",
+             pAdjustMethod = "BH",
+             pvalueCutoff = P_VALUE_CUTOFF,
+             qvalueCutoff = Q_VALUE_CUTOFF,
+             readable = TRUE)
+  }, error = function(e) NULL)
+  
+  if (!is.null(go_mf) && nrow(go_mf) > 0) {
+    results$GO_MF <- go_mf
+    write.csv(as.data.frame(go_mf), 
+              paste0(output_prefix, "_GO_MF.csv"), 
+              row.names = FALSE)
+    cat("    ✓", nrow(go_mf), "GO MF terms found\n")
+  } else {
+    cat("    No significant GO MF terms\n")
+  }
+  
+  # GO Cellular Component
+  cat("  Running GO Cellular Component...\n")
+  go_cc <- tryCatch({
+    enrichGO(gene = gene_ids$ENTREZID,
+             OrgDb = org.Mm.eg.db,
+             ont = "CC",
+             pAdjustMethod = "BH",
+             pvalueCutoff = P_VALUE_CUTOFF,
+             qvalueCutoff = Q_VALUE_CUTOFF,
+             readable = TRUE)
+  }, error = function(e) NULL)
+  
+  if (!is.null(go_cc) && nrow(go_cc) > 0) {
+    results$GO_CC <- go_cc
+    write.csv(as.data.frame(go_cc), 
+              paste0(output_prefix, "_GO_CC.csv"), 
+              row.names = FALSE)
+    cat("    ✓", nrow(go_cc), "GO CC terms found\n")
+  } else {
+    cat("    No significant GO CC terms\n")
+  }
+  
+  return(list(results = results, gene_ids = gene_ids))
+}
+
+#' Perform KEGG pathway enrichment
+perform_kegg_enrichment <- function(gene_ids, output_prefix) {
+  
+  cat("  Running KEGG pathway enrichment...\n")
+  kegg <- tryCatch({
+    enrichKEGG(gene = gene_ids$ENTREZID,
+               organism = "mmu",
+               pvalueCutoff = P_VALUE_CUTOFF,
+               pAdjustMethod = "BH",
+               qvalueCutoff = Q_VALUE_CUTOFF)
+  }, error = function(e) NULL)
+  
+  if (!is.null(kegg) && nrow(kegg) > 0) {
+    # Convert gene IDs back to symbols for readability
+    kegg <- setReadable(kegg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID")
+    
+    write.csv(as.data.frame(kegg), 
+              paste0(output_prefix, "_KEGG.csv"), 
+              row.names = FALSE)
+    cat("    ✓", nrow(kegg), "KEGG pathways found\n")
+    return(kegg)
+  } else {
+    cat("    No significant KEGG pathways\n")
+    return(NULL)
+  }
+}
+
+#' Create viridis dotplot
+create_viridis_dotplot <- function(enrichment_obj, title, output_file, 
+                                    n_terms = TOP_N_TERMS) {
+  
+  if (is.null(enrichment_obj) || nrow(enrichment_obj) == 0) {
+    return(NULL)
+  }
+  
+  p <- dotplot(enrichment_obj, showCategory = n_terms) +
+    scale_color_viridis_c(option = VIRIDIS_PALETTE, direction = -1) +
+    ggtitle(title) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      axis.text.y = element_text(size = 10),
+      axis.text.x = element_text(size = 10),
+      legend.position = "right"
+    )
+  
+  suppressMessages(ggsave(output_file, p, width = 12, height = 8, dpi = 300))
+  cat("    ✓ Saved dotplot:", basename(output_file), "\n")
+  
+  return(p)
+}
+
+#' Create viridis barplot
+create_viridis_barplot <- function(enrichment_obj, title, output_file, 
+                                    n_terms = TOP_N_TERMS) {
+  
+  if (is.null(enrichment_obj) || nrow(enrichment_obj) == 0) {
+    return(NULL)
+  }
+  
+  p <- barplot(enrichment_obj, showCategory = n_terms) +
+    scale_fill_viridis_c(option = VIRIDIS_PALETTE, direction = -1) +
+    ggtitle(title) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      axis.text.y = element_text(size = 10),
+      axis.text.x = element_text(size = 10)
+    )
+  
+  suppressMessages(ggsave(output_file, p, width = 10, height = 8, dpi = 300))
+  cat("    ✓ Saved barplot:", basename(output_file), "\n")
+  
+  return(p)
+}
+
+#' Process a single task for a specific cell type
+process_task_enrichment <- function(cell_type_dir, cell_type_name, task, 
+                                     scenario_name, task_output_dir) {
+  
+  cat("\n  ---- Task:", task, "----\n")
+  
+  # Look for task-specific gene list
+  gene_file <- file.path(cell_type_dir, paste0(cell_type_name, "_", task, "_significant_genes.txt"))
+  
+  if (!file.exists(gene_file)) {
+    cat("  Gene list not found:", basename(gene_file), "\n")
+    return(NULL)
+  }
+  
+  # Load genes
+  gene_symbols <- tryCatch({
+    readLines(gene_file)
+  }, error = function(e) {
+    cat("  Error reading gene file\n")
+    return(character(0))
+  })
+  
+  gene_symbols <- gene_symbols[gene_symbols != ""]
+  
+  if (length(gene_symbols) < MIN_GENES_FOR_ENRICHMENT) {
+    cat("  Too few genes (", length(gene_symbols), "). Skipping.\n")
+    return(NULL)
+  }
+  
+  cat("  Loaded", length(gene_symbols), "genes\n")
+  
+  # Create output prefix
+  output_prefix <- file.path(task_output_dir, 
+                             paste0(cell_type_name, "_", task))
+  
+  # Perform GO enrichment
+  go_results <- perform_go_enrichment(gene_symbols, output_prefix)
+  
+  if (is.null(go_results)) {
+    return(NULL)
+  }
+  
+  # Perform KEGG enrichment
+  kegg_result <- perform_kegg_enrichment(go_results$gene_ids, output_prefix)
+  
+  # Create plots
+  cat("  Creating visualizations...\n")
+  
+  # GO BP plots
+  if (!is.null(go_results$results$GO_BP)) {
+    create_viridis_dotplot(
+      go_results$results$GO_BP,
+      paste(cell_type_name, "-", task, "- GO BP"),
+      paste0(output_prefix, "_GO_BP_dotplot.pdf")
+    )
+    create_viridis_barplot(
+      go_results$results$GO_BP,
+      paste(cell_type_name, "-", task, "- GO BP"),
+      paste0(output_prefix, "_GO_BP_barplot.pdf")
+    )
+  }
+  
+  # GO MF plots
+  if (!is.null(go_results$results$GO_MF)) {
+    create_viridis_dotplot(
+      go_results$results$GO_MF,
+      paste(cell_type_name, "-", task, "- GO MF"),
+      paste0(output_prefix, "_GO_MF_dotplot.pdf")
+    )
+    create_viridis_barplot(
+      go_results$results$GO_MF,
+      paste(cell_type_name, "-", task, "- GO MF"),
+      paste0(output_prefix, "_GO_MF_barplot.pdf")
+    )
+  }
+  
+  # GO CC plots
+  if (!is.null(go_results$results$GO_CC)) {
+    create_viridis_dotplot(
+      go_results$results$GO_CC,
+      paste(cell_type_name, "-", task, "- GO CC"),
+      paste0(output_prefix, "_GO_CC_dotplot.pdf")
+    )
+    create_viridis_barplot(
+      go_results$results$GO_CC,
+      paste(cell_type_name, "-", task, "- GO CC"),
+      paste0(output_prefix, "_GO_CC_barplot.pdf")
+    )
+  }
+  
+  # KEGG plots
+  if (!is.null(kegg_result)) {
+    create_viridis_dotplot(
+      kegg_result,
+      paste(cell_type_name, "-", task, "- KEGG"),
+      paste0(output_prefix, "_KEGG_dotplot.pdf")
+    )
+    create_viridis_barplot(
+      kegg_result,
+      paste(cell_type_name, "-", task, "- KEGG"),
+      paste0(output_prefix, "_KEGG_barplot.pdf")
+    )
+  }
+  
+  # Return summary
+  return(data.frame(
+    Scenario = scenario_name,
+    CellType = cell_type_name,
+    Task = task,
+    N_Genes = length(gene_symbols),
+    N_Genes_Converted = nrow(go_results$gene_ids),
+    GO_BP_Terms = ifelse(is.null(go_results$results$GO_BP), 0, nrow(go_results$results$GO_BP)),
+    GO_MF_Terms = ifelse(is.null(go_results$results$GO_MF), 0, nrow(go_results$results$GO_MF)),
+    GO_CC_Terms = ifelse(is.null(go_results$results$GO_CC), 0, nrow(go_results$results$GO_CC)),
+    KEGG_Pathways = ifelse(is.null(kegg_result), 0, nrow(kegg_result)),
+    stringsAsFactors = FALSE
+  ))
+}
+
+#' Process all tasks for a cell type
+process_cell_type <- function(cell_type_dir, scenario_name, scenario_output_dir) {
+  
+  cell_type_name <- basename(cell_type_dir)
+  
+  cat("\n========================================\n")
+  cat("Cell Type:", cell_type_name, "\n")
+  cat("========================================\n")
+  
+  # Create cell type output directory
+  celltype_output_dir <- file.path(scenario_output_dir, cell_type_name)
+  if (!dir.exists(celltype_output_dir)) {
+    dir.create(celltype_output_dir, recursive = TRUE)
+  }
+  
+  # Process each task
+  all_task_results <- list()
+  
+  for (task in TASKS) {
+    result <- tryCatch({
+      process_task_enrichment(cell_type_dir, cell_type_name, task, 
+                             scenario_name, celltype_output_dir)
+    }, error = function(e) {
+      cat("  ERROR in", task, ":", as.character(e), "\n")
+      return(NULL)
+    })
+    
+    if (!is.null(result)) {
+      all_task_results[[task]] <- result
+    }
+  }
+  
+  # Combine results
+  if (length(all_task_results) > 0) {
+    combined <- bind_rows(all_task_results)
+    
+    # Save cell-type level summary
+    write.csv(combined, 
+              file.path(celltype_output_dir, paste0(cell_type_name, "_task_enrichment_summary.csv")),
+              row.names = FALSE)
+    
+    cat("\n✓ Completed", cell_type_name, "\n")
+    return(combined)
+  }
+  
+  return(NULL)
+}
+
+# ====================================================================
+# MAIN EXECUTION
+# ====================================================================
+
+cat("\n========================================\n")
+cat("STARTING TASK-SPECIFIC ENRICHMENT ANALYSIS\n")
+cat("========================================\n\n")
+
+# Initialize summary dataframe
+summary_df <- data.frame()
+
+# Loop through each scenario
+for (scenario_name in names(INPUT_DIRS)) {
+  
+  scenario_dir <- INPUT_DIRS[[scenario_name]]
+  
+  cat("########################################\n")
+  cat("SCENARIO:", scenario_name, "\n")
+  cat("Directory:", scenario_dir, "\n")
+  cat("########################################\n")
+  
+  if (!dir.exists(scenario_dir)) {
+    cat("Warning: Directory not found:", scenario_dir, "\n")
+    cat("Skipping this scenario.\n\n")
+    next
+  }
+  
+  # Create scenario output directory
+  scenario_output_dir <- file.path(OUTPUT_DIR, scenario_name)
+  if (!dir.exists(scenario_output_dir)) {
+    dir.create(scenario_output_dir, recursive = TRUE)
+  }
+  
+  # Find all cell type subdirectories
+  cell_type_dirs <- list.dirs(scenario_dir, recursive = FALSE, full.names = TRUE)
+  
+  if (length(cell_type_dirs) == 0) {
+    cat("No cell type directories found.\n\n")
+    next
+  }
+  
+  cat("Found", length(cell_type_dirs), "cell types to process\n")
+  
+  # Process each cell type
+  for (cell_type_dir in cell_type_dirs) {
+    
+    result <- tryCatch({
+      process_cell_type(cell_type_dir, scenario_name, scenario_output_dir)
+    }, error = function(e) {
+      cat("  ERROR:", as.character(e), "\n")
+      return(NULL)
+    })
+    
+    if (!is.null(result)) {
+      summary_df <- rbind(summary_df, result)
+    }
+  }
+  
+  cat("\n✓ Completed scenario:", scenario_name, "\n\n")
+}
+
+# ====================================================================
+# CREATE OVERALL SUMMARY AND VISUALIZATIONS
+# ====================================================================
+
+if (nrow(summary_df) > 0) {
+  
+  cat("========================================\n")
+  cat("CREATING SUMMARY REPORTS\n")
+  cat("========================================\n")
+  
+  # Save summary table
+  write.csv(summary_df, file.path(OUTPUT_DIR, "enrichment_summary_all_tasks.csv"), 
+            row.names = FALSE)
+  
+  cat("\nOVERALL SUMMARY:\n")
+  cat("Total analyses:", nrow(summary_df), "\n")
+  cat("Total GO BP terms:", sum(summary_df$GO_BP_Terms), "\n")
+  cat("Total GO MF terms:", sum(summary_df$GO_MF_Terms), "\n")
+  cat("Total GO CC terms:", sum(summary_df$GO_CC_Terms), "\n")
+  cat("Total KEGG pathways:", sum(summary_df$KEGG_Pathways), "\n\n")
+  
+  # Task-specific summary
+  task_summary <- summary_df %>%
+    group_by(Task) %>%
+    summarise(
+      N_CellTypes = dplyr::n(),
+      N_Scenarios = n_distinct(Scenario),
+      Avg_Genes = mean(N_Genes),
+      Total_GO_BP = sum(GO_BP_Terms),
+      Total_GO_MF = sum(GO_MF_Terms),
+      Total_GO_CC = sum(GO_CC_Terms),
+      Total_KEGG = sum(KEGG_Pathways),
+      .groups = 'drop'
+    )
+  
+  cat("TASK PROGRESSION SUMMARY:\n")
+  cat("-------------------------\n")
+  print(task_summary)
+  cat("\n")
+  
+  write.csv(task_summary, 
+            file.path(OUTPUT_DIR, "task_progression_summary.csv"), 
+            row.names = FALSE)
+  
+  # Create visualizations
+  cat("Creating summary visualizations...\n")
+  
+  # Plot 1: Enrichment by task (shows difficulty progression)
+  summary_long <- summary_df %>%
+    select(Task, CellType, Scenario, GO_BP_Terms, GO_MF_Terms, GO_CC_Terms, KEGG_Pathways) %>%
+    pivot_longer(cols = c(GO_BP_Terms, GO_MF_Terms, GO_CC_Terms, KEGG_Pathways),
+                 names_to = "Enrichment_Type",
+                 values_to = "Count") %>%
+    mutate(
+      Enrichment_Type = factor(Enrichment_Type,
+                              levels = c("GO_BP_Terms", "GO_MF_Terms", 
+                                        "GO_CC_Terms", "KEGG_Pathways"),
+                              labels = c("GO BP", "GO MF", "GO CC", "KEGG")),
+      Task = factor(Task, levels = TASKS)  # Ensure proper ordering
+    )
+  
+  p1 <- ggplot(summary_long, aes(x = Task, y = Count, fill = Enrichment_Type)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_wrap(~Scenario, ncol = 2) +
+    scale_fill_viridis_d(option = VIRIDIS_PALETTE) +
+    labs(title = "Enrichment Results by Task Difficulty (A→D = Easy→Hard)",
+         subtitle = "Each task analyzed separately to preserve difficulty progression",
+         x = "Task (Difficulty: A < B < C < D)",
+         y = "Number of Terms/Pathways",
+         fill = "Type") +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 10),
+          strip.text = element_text(face = "bold"),
+          legend.position = "bottom",
+          plot.subtitle = element_text(size = 10, face = "italic"))
+  
+  suppressMessages(ggsave(file.path(OUTPUT_DIR, "summary_by_task_progression.pdf"), 
+         p1, width = 14, height = 10, dpi = 300))
+  
+  # Plot 2: Gene count by task (shows if harder tasks have more genes)
+  p2 <- ggplot(summary_df, aes(x = Task, y = N_Genes, fill = Task)) +
+    geom_boxplot() +
+    facet_wrap(~Scenario, ncol = 2) +
+    scale_fill_viridis_d(option = VIRIDIS_PALETTE) +
+    labs(title = "Number of Correlated Genes by Task Difficulty",
+         x = "Task (Difficulty: A < B < C < D)",
+         y = "Number of Genes") +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 0, hjust = 0.5),
+          strip.text = element_text(face = "bold"),
+          legend.position = "none")
+  
+  suppressMessages(ggsave(file.path(OUTPUT_DIR, "gene_count_by_task.pdf"), 
+         p2, width = 12, height = 8, dpi = 300))
+  
+  # Plot 3: Heatmap showing cell types × tasks
+  heatmap_data <- summary_df %>%
+    mutate(Total_Enrichment = GO_BP_Terms + GO_MF_Terms + GO_CC_Terms + KEGG_Pathways) %>%
+    select(Scenario, CellType, Task, Total_Enrichment)
+  
+  for (scenario in unique(heatmap_data$Scenario)) {
+    scenario_data <- heatmap_data %>%
+      filter(Scenario == scenario) %>%
+      select(-Scenario) %>%
+      pivot_wider(names_from = Task, values_from = Total_Enrichment, values_fill = 0)
+    
+    if (nrow(scenario_data) > 0) {
+      mat <- as.matrix(scenario_data[, -1])
+      rownames(mat) <- scenario_data$CellType
+      
+      p3 <- ggplot(scenario_data %>% 
+                    pivot_longer(-CellType, names_to = "Task", values_to = "Enrichment"),
+                   aes(x = factor(Task, levels = TASKS), y = CellType, fill = Enrichment)) +
+        geom_tile() +
+        scale_fill_viridis_c(option = VIRIDIS_PALETTE) +
+        labs(title = paste("Total Enrichment Terms:", scenario),
+             subtitle = "Heatmap showing which cell types have enrichment in each task",
+             x = "Task (A→D = Easy→Hard)",
+             y = "Cell Type",
+             fill = "Total Terms") +
+        theme_minimal(base_size = 10) +
+        theme(axis.text.x = element_text(angle = 0, hjust = 0.5),
+              axis.text.y = element_text(size = 8),
+              plot.subtitle = element_text(size = 9, face = "italic"))
+      
+      suppressMessages(ggsave(file.path(OUTPUT_DIR, paste0("heatmap_", scenario, ".pdf")), 
+             p3, width = 8, height = max(6, nrow(scenario_data) * 0.3), dpi = 300))
+    }
+  }
+  
+  cat("✓ Summary visualizations saved\n\n")
+  
+  # Show top cell types with most task-specific enrichment
+  top_celltypes <- summary_df %>%
+    mutate(Total_Enrichment = GO_BP_Terms + GO_MF_Terms + GO_CC_Terms + KEGG_Pathways) %>%
+    group_by(CellType, Task) %>%
+    summarise(Total = sum(Total_Enrichment), .groups = 'drop') %>%
+    arrange(desc(Total)) %>%
+    head(15)
+  
+  cat("TOP 15 CELL TYPE × TASK COMBINATIONS BY ENRICHMENT:\n")
+  cat("---------------------------------------------------\n")
+  print(top_celltypes)
+  
+} else {
+  cat("No enrichment results generated.\n")
+}
