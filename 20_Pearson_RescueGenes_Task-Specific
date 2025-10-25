@@ -1,0 +1,390 @@
+# ====================================================================
+# PEARSON CORRELATIONS - TASK-SPECIFIC VERSION
+# Saves separate gene lists for each task (A, B, C, D)
+# Options: basic rescue genes, adjustable FDR threshold
+# ====================================================================
+
+library(tidyverse)
+library(viridis)
+library(ggplot2)
+library(pheatmap)
+
+# ====================================================================
+# CONFIGURATION - MODIFY THESE AS NEEDED
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+BEHAVIOR_DIR <- "/Volumes/DataBox/MCS2023/Stats/Behavior_StatsFiles"
+OUTPUT_DIR <- "rescue_behavior_correlations_basic_FDR-0-05_TASK_SPECIFIC"  # New output dir
+
+# OPTION 1: Choose gene list type
+GENE_LIST_TYPE <- "basic"  # Options: "strong" or "basic"
+
+# OPTION 2: Set FDR threshold
+FDR_THRESHOLD <- 0.05  # Options: 0.05 (standard), 0.10 (exploratory), 0.15 (very exploratory)
+
+cat("========================================\n")
+cat("CONFIGURATION:\n")
+cat("  Gene list type:", GENE_LIST_TYPE, "\n")
+cat("  FDR threshold:", FDR_THRESHOLD, "\n")
+cat("  Output directory:", OUTPUT_DIR, "\n")
+cat("  Task-specific gene lists: ENABLED ✓\n")
+cat("========================================\n\n")
+
+if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
+
+TASK_FILES <- c(
+  "TaskA-45_AllStats.csv",
+  "TaskB-59_AllStats.csv",
+  "TaskC-48_AllStats.csv",
+  "TaskD-149_AllStats.csv"
+)
+
+RESPONSE_TYPES <- c(
+  "Correct_Response",
+  "Premature_Response", 
+  "Missed_Response_Window",
+  "Wrong_Choice"
+)
+
+# ====================================================================
+# FUNCTIONS
+# ====================================================================
+
+load_all_behavioral_data <- function() {
+  cat("Loading behavioral data from:", BEHAVIOR_DIR, "\n")
+  all_behavior_data <- list()
+  
+  for (task_file in TASK_FILES) {
+    task_path <- file.path(BEHAVIOR_DIR, task_file)
+    if (!file.exists(task_path)) {
+      cat("Warning: File not found -", task_file, "\n")
+      next
+    }
+    
+    task_name <- gsub("-.*", "", task_file)
+    task_data <- read.csv(task_path, stringsAsFactors = FALSE)
+    colnames(task_data) <- gsub("^\\ufeff", "", colnames(task_data))
+    
+    required_cols <- c("Sample", "Treatment", RESPONSE_TYPES)
+    missing_cols <- setdiff(required_cols, colnames(task_data))
+    
+    if (length(missing_cols) > 0) {
+      cat("Warning: Missing columns in", task_file, ":", paste(missing_cols, collapse = ", "), "\n")
+      next
+    }
+    
+    task_data$Task <- task_name
+    all_behavior_data[[task_name]] <- task_data
+    cat("✓ Loaded", task_name, ":", nrow(task_data), "animals\n")
+  }
+  
+  combined_data <- bind_rows(all_behavior_data)
+  cat("\nTotal behavioral observations:", nrow(combined_data), "\n")
+  cat("Tasks loaded:", paste(names(all_behavior_data), collapse = ", "), "\n")
+  cat("Treatment groups:", paste(unique(combined_data$Treatment), collapse = ", "), "\n\n")
+  
+  return(combined_data)
+}
+
+perform_rescue_correlations <- function(rescue_genes_file, cell_type_name, behavior_data) {
+  cat("\n========================================\n")
+  cat("Processing:", cell_type_name, "\n")
+  cat("========================================\n")
+  
+  if (!file.exists(rescue_genes_file)) {
+    cat("Error: File not found -", rescue_genes_file, "\n")
+    return(NULL)
+  }
+  
+  rescue_data <- read.csv(rescue_genes_file, row.names = 1, stringsAsFactors = FALSE)
+  gene_list <- rescue_data$gene
+  n_genes <- length(gene_list)
+  
+  cat("Loaded", n_genes, "rescue genes\n")
+  if (n_genes == 0) {
+    cat("No rescue genes found. Skipping.\n")
+    return(NULL)
+  }
+  
+  gene_zscores <- rescue_data %>%
+    dplyr::select(gene, t1, t2, t3, t4) %>%
+    tidyr::pivot_longer(cols = c(t1, t2, t3, t4), names_to = "Treatment", values_to = "Gene_ZScore")
+  
+  cat("Gene z-scores:", nrow(gene_zscores), "gene-treatment combinations\n")
+  
+  correlation_data <- behavior_data %>%
+    left_join(gene_zscores, by = "Treatment", relationship = "many-to-many")
+  
+  cat("Merged dataset:", nrow(correlation_data), "observations\n")
+  
+  correlation_results <- data.frame()
+  
+  for (task in unique(correlation_data$Task)) {
+    task_data <- correlation_data %>% dplyr::filter(Task == task)
+    cat("Analyzing", task, "...\n")
+    
+    for (response in RESPONSE_TYPES) {
+      for (gene_name in gene_list) {
+        gene_data <- task_data %>%
+          dplyr::filter(gene == gene_name) %>%
+          dplyr::select(Sample, Treatment, Gene_ZScore, all_of(response)) %>%
+          tidyr::drop_na()
+        
+        if (nrow(gene_data) < 4) next
+        
+        cor_test <- cor.test(gene_data$Gene_ZScore, gene_data[[response]], method = "pearson")
+        
+        correlation_results <- rbind(correlation_results, data.frame(
+          CellType = cell_type_name, Gene = gene_name, Task = task, Response = response,
+          Pearson_r = cor_test$estimate, P_value = cor_test$p.value,
+          N = nrow(gene_data), stringsAsFactors = FALSE
+        ))
+      }
+    }
+  }
+  
+  if (nrow(correlation_results) == 0) {
+    cat("No correlations calculated.\n")
+    return(NULL)
+  }
+  
+  correlation_results <- correlation_results %>%
+    dplyr::group_by(Task, Response) %>%
+    dplyr::mutate(FDR = p.adjust(P_value, method = "BH")) %>%
+    dplyr::ungroup() %>%
+    dplyr::arrange(Task, Response, FDR, desc(abs(Pearson_r)))
+  
+  correlation_results$Significant <- correlation_results$FDR < FDR_THRESHOLD
+  
+  n_total <- nrow(correlation_results)
+  n_sig <- sum(correlation_results$Significant)
+  n_nominal <- sum(correlation_results$P_value < 0.05)
+  
+  cat("\nTotal correlations tested:", n_total, "\n")
+  cat("Significant at FDR <", FDR_THRESHOLD, ":", n_sig, "\n")
+  cat("Nominally significant (p < 0.05):", n_nominal, "\n\n")
+  
+  celltype_dir <- file.path(OUTPUT_DIR, cell_type_name)
+  if (!dir.exists(celltype_dir)) dir.create(celltype_dir)
+  
+  # Save all correlations
+  write.csv(correlation_results, 
+            file.path(celltype_dir, paste0(cell_type_name, "_all_correlations.csv")), 
+            row.names = FALSE)
+  
+  # Save significant correlations
+  sig_correlations <- correlation_results %>% dplyr::filter(Significant == TRUE)
+  
+  if (nrow(sig_correlations) > 0) {
+    write.csv(sig_correlations, 
+              file.path(celltype_dir, paste0(cell_type_name, "_significant_correlations.csv")), 
+              row.names = FALSE)
+    
+    # ====================================================================
+    # NEW: SAVE TASK-SPECIFIC GENE LISTS
+    # ====================================================================
+    
+    # Save overall list (all tasks combined) for backward compatibility
+    sig_genes_all <- unique(sig_correlations$Gene)
+    write.table(sig_genes_all, 
+                file.path(celltype_dir, paste0(cell_type_name, "_all_significant_genes.txt")),
+                row.names = FALSE, col.names = FALSE, quote = FALSE)
+    
+    cat("Saved", length(sig_genes_all), "unique genes (all tasks combined)\n")
+    
+    # NEW: Save task-specific gene lists
+    for (task in unique(sig_correlations$Task)) {
+      task_genes <- sig_correlations %>%
+        dplyr::filter(Task == task) %>%
+        pull(Gene) %>%
+        unique()
+      
+      if (length(task_genes) > 0) {
+        write.table(task_genes, 
+                    file.path(celltype_dir, paste0(cell_type_name, "_", task, "_significant_genes.txt")),
+                    row.names = FALSE, col.names = FALSE, quote = FALSE)
+        cat("  ✓", task, ":", length(task_genes), "genes\n")
+      }
+    }
+    
+    # NEW: Create task summary
+    task_summary <- sig_correlations %>%
+      group_by(Task) %>%
+      summarise(
+        N_Genes = n_distinct(Gene),
+        N_Correlations = dplyr::n(),
+        Avg_abs_r = mean(abs(Pearson_r)),
+        Min_FDR = min(FDR),
+        .groups = 'drop'
+      )
+    
+    write.csv(task_summary, 
+              file.path(celltype_dir, paste0(cell_type_name, "_task_summary.csv")), 
+              row.names = FALSE)
+    
+    cat("\n✓ Task summary saved\n")
+  } else {
+    cat("No significant correlations found\n")
+  }
+  
+  return(correlation_results)
+}
+
+# ====================================================================
+# MAIN EXECUTION
+# ====================================================================
+
+cat("========================================\n")
+cat("LOADING BEHAVIORAL DATA\n")
+cat("========================================\n")
+
+behavior_data <- load_all_behavioral_data()
+
+if (nrow(behavior_data) == 0) {
+  stop("No behavioral data loaded. Check file paths.")
+}
+
+# ====================================================================
+# DEFINE CELL TYPES - Using chosen gene list type
+# ====================================================================
+
+# Construct file names based on gene list type
+file_suffix <- paste0("_rescue_genes_", GENE_LIST_TYPE, "_rescue.csv")
+
+analyses <- list(
+  list(name = "Astrocyte", file = paste0("astro", file_suffix)),
+  list(name = "C8_Astrocyte", file = paste0("C8", file_suffix)),
+  list(name = "Oligodendrocyte", file = paste0("oligo", file_suffix)),
+  list(name = "C2_Oligo", file = paste0("C2", file_suffix)),
+  list(name = "C3_Oligo", file = paste0("C3", file_suffix)),
+  list(name = "C1_AstroPrecursor", file = paste0("C1", file_suffix)),
+  list(name = "C4_GlutOligo", file = paste0("C4", file_suffix)),
+  list(name = "C5_OligoPrecursor", file = paste0("C5", file_suffix)),
+  list(name = "C6_OligoPrecursor", file = paste0("C6", file_suffix)),
+  list(name = "C7_AstroPrecursor", file = paste0("C7", file_suffix)),
+  list(name = "C9_AstroPrecursor", file = paste0("C9", file_suffix)),
+  list(name = "Microglia", file = paste0("microglia", file_suffix)),
+  list(name = "C10_Microglia", file = paste0("C10", file_suffix)),
+  list(name = "C11_Microglia", file = paste0("C11", file_suffix)),
+  list(name = "Endo", file = paste0("endo", file_suffix)),
+  list(name = "C12_Endo", file = paste0("C12", file_suffix)),
+  list(name = "C13_Endo", file = paste0("C13", file_suffix)),
+  list(name = "C14_Endo", file = paste0("C14", file_suffix)),
+  list(name = "C15_GlutPrecursor", file = paste0("C15", file_suffix)),
+  list(name = "C16_GlutPrecursor", file = paste0("C16", file_suffix)),
+  list(name = "C17_GlutPrecursor", file = paste0("C17", file_suffix)),
+  list(name = "C20_GlutPrecursor", file = paste0("C20", file_suffix)),
+  list(name = "C25_GlutPrecursor", file = paste0("C25", file_suffix)),
+  list(name = "Glutamatergic", file = paste0("glut", file_suffix)),
+  list(name = "C18_Glutamatergic", file = paste0("C18", file_suffix)),
+  list(name = "C19_Glutamatergic", file = paste0("C19", file_suffix)),
+  list(name = "C21_Glutamatergic", file = paste0("C21", file_suffix)),
+  list(name = "GABAergic", file = paste0("gaba", file_suffix)),
+  list(name = "C22_GABAergic", file = paste0("C22", file_suffix)),
+  list(name = "C23_GABAergic", file = paste0("C23", file_suffix)),
+  list(name = "C24_GlutAstro", file = paste0("C24", file_suffix))
+)
+
+cat("Using", GENE_LIST_TYPE, "rescue gene files\n\n")
+
+# ====================================================================
+# RUN ANALYSES
+# ====================================================================
+
+cat("========================================\n")
+cat("RUNNING CORRELATION ANALYSES\n")
+cat("========================================\n")
+
+all_results <- list()
+
+for (analysis in analyses) {
+  if (!file.exists(analysis$file)) {
+    cat("Warning: File not found:", analysis$file, "- Skipping\n\n")
+    next
+  }
+  
+  results <- perform_rescue_correlations(
+    rescue_genes_file = analysis$file,
+    cell_type_name = analysis$name,
+    behavior_data = behavior_data
+  )
+  
+  if (!is.null(results)) {
+    all_results[[analysis$name]] <- results
+  }
+}
+
+# ====================================================================
+# CREATE SUMMARY
+# ====================================================================
+
+if (length(all_results) > 0) {
+  cat("========================================\n")
+  cat("CREATING SUMMARY\n")
+  cat("========================================\n")
+  
+  combined_results <- bind_rows(all_results)
+  write.csv(combined_results, 
+            file.path(OUTPUT_DIR, "all_celltypes_all_correlations.csv"), 
+            row.names = FALSE)
+  
+  combined_sig <- combined_results %>% dplyr::filter(Significant == TRUE)
+  
+  cat("OVERALL RESULTS:\n")
+  cat("  Total correlations:", nrow(combined_results), "\n")
+  cat("  Significant (FDR <", FDR_THRESHOLD, "):", nrow(combined_sig), "\n")
+  cat("  Nominally significant (p < 0.05):", sum(combined_results$P_value < 0.05), "\n\n")
+  
+  if (nrow(combined_sig) > 0) {
+    write.csv(combined_sig, 
+              file.path(OUTPUT_DIR, "all_celltypes_significant_correlations.csv"), 
+              row.names = FALSE)
+    
+    # Task-specific summary across all cell types
+    task_breakdown <- combined_sig %>%
+      group_by(Task) %>%
+      summarise(
+        N_CellTypes = n_distinct(CellType),
+        N_Genes = n_distinct(Gene),
+        N_Correlations = dplyr::n(),
+        Avg_abs_r = mean(abs(Pearson_r)),
+        .groups = 'drop'
+      ) %>%
+      arrange(Task)
+    
+    cat("\n========================================\n")
+    cat("TASK-SPECIFIC BREAKDOWN (All Cell Types)\n")
+    cat("========================================\n")
+    print(task_breakdown)
+    cat("\n")
+    
+    write.csv(task_breakdown, 
+              file.path(OUTPUT_DIR, "task_breakdown_summary.csv"), 
+              row.names = FALSE)
+    
+    # Show top hits
+    top_hits <- combined_sig %>%
+      dplyr::arrange(P_value) %>%
+      head(10)
+    
+    cat("TOP 10 SIGNIFICANT CORRELATIONS:\n")
+    for (i in 1:nrow(top_hits)) {
+      cat(sprintf("%2d. [%s] %s (%s-%s): r=%.3f, p=%.4f, FDR=%.4f\n",
+                  i, top_hits$CellType[i], top_hits$Gene[i],
+                  top_hits$Task[i], top_hits$Response[i],
+                  top_hits$Pearson_r[i], top_hits$P_value[i], top_hits$FDR[i]))
+    }
+  }
+}
+
+cat("\n========================================\n")
+cat("ANALYSIS COMPLETE!\n")
+cat("========================================\n")
+cat("Results saved in:", OUTPUT_DIR, "\n")
+cat("\nNew features in this version:\n")
+cat("  ✓ Task-specific gene lists saved\n")
+cat("  ✓ Task summary files created\n")
+cat("  ✓ Backward compatible (still saves combined lists)\n")
+cat("========================================\n")
