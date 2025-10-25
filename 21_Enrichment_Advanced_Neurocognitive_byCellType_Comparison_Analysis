@@ -1,0 +1,593 @@
+# ====================================================================
+# CELL TYPE-SPECIFIC NEUROCOGNITIVE ANALYSIS
+# Separate heatmaps for each cell type and its clusters
+# Much cleaner for visualization and publication
+# ====================================================================
+
+library(tidyverse)
+library(viridis)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+ENRICHMENT_DIR <- "GO_KEGG_Enrichment_Results_TASK_SPECIFIC"
+OUTPUT_DIR <- file.path(ENRICHMENT_DIR, "Comparison_Analyses_Neurocognitive_ByCellType")
+
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+VIRIDIS_PALETTE <- "viridis"
+
+# ====================================================================
+# CELL TYPE GROUPINGS
+# Organize cell types into logical groups for analysis
+# ====================================================================
+
+CELL_TYPE_GROUPS <- list(
+  
+  Astrocytes = list(
+    display_name = "Astrocytes",
+    cell_types = c("Astrocyte", "C8_Astrocyte", "C1_AstroPrecursor", 
+                   "C7_AstroPrecursor", "C9_AstroPrecursor"),
+    color = "#FDE725"
+  ),
+  
+  Oligodendrocytes = list(
+    display_name = "Oligodendrocytes",
+    cell_types = c("Oligodendrocyte", "C2_Oligo", "C3_Oligo", 
+                   "C5_OligoPrecursor", "C6_OligoPrecursor"),
+    color = "#21908C"
+  ),
+  
+  Glutamatergic = list(
+    display_name = "Glutamatergic Neurons",
+    cell_types = c("Glutamatergic", "C18_Glutamatergic", "C19_Glutamatergic", 
+                   "C21_Glutamatergic", "C15_GlutPrecursor", "C16_GlutPrecursor",
+                   "C17_GlutPrecursor", "C20_GlutPrecursor", "C25_GlutPrecursor"),
+    color = "#440154"
+  ),
+  
+  GABAergic = list(
+    display_name = "GABAergic Neurons",
+    cell_types = c("GABAergic", "C22_GABAergic", "C23_GABAergic"),
+    color = "#5DC863"
+  ),
+  
+  Microglia = list(
+    display_name = "Microglia",
+    cell_types = c("Microglia", "C10_Microglia", "C11_Microglia"),
+    color = "#3B528B"
+  ),
+  
+  Endothelial = list(
+    display_name = "Endothelial Cells",
+    cell_types = c("Endo", "C12_Endo", "C13_Endo", "C14_Endo"),
+    color = "#FCA636"
+  ),
+  
+  Mixed = list(
+    display_name = "Mixed/Other",
+    cell_types = c("C4_GlutOligo", "C24_GlutAstro"),
+    color = "#B8DE29"
+  )
+)
+
+# ====================================================================
+# NEUROCOGNITIVE CATEGORIES (same as before)
+# ====================================================================
+
+NEUROCOGNITIVE_KEYWORDS <- list(
+  
+  Synaptic = c(
+    "synap", "neurotransmit", "vesicle", "exocyto", "endocyto",
+    "receptor", "channel", "ion transport", "glutamate", "GABA",
+    "acetylcholine", "dopamine", "serotonin", "signal transduction",
+    "postsynaptic", "presynaptic", "dendritic spine", "axon guidance",
+    "chemical synaptic transmission"
+  ),
+  
+  Neuronal_Development = c(
+    "neuron development", "neuron differentiation", "neurogenesis",
+    "axon", "dendrite", "neurite", "growth cone", "cell morphogenesis",
+    "neural tube", "nervous system development", "brain development",
+    "synaptogenesis", "plasticity", "learning", "memory"
+  ),
+  
+  Myelination = c(
+    "myelin", "oligodendro", "white matter", "axon ensheathment",
+    "gliogenesis", "glial cell differentiation", "compact myelin",
+    "myelination", "remyelination"
+  ),
+  
+  Cognitive_Function = c(
+    "attention", "cognition", "cognitive", "executive", "behavior",
+    "learning", "memory", "spatial", "working memory", "sensory",
+    "perception", "decision making", "response to stimulus"
+  ),
+  
+  Astrocyte_Metabolic = c(
+    "astrocyte", "metabolic", "glucose", "lactate", "energy",
+    "ATP", "mitochondria", "oxidative phosphorylation", "glycolysis",
+    "neuron-glia", "potassium ion transport", "calcium signaling"
+  ),
+  
+  Inhibitory_Signaling = c(
+    "GABA", "inhibitory", "interneuron", "chloride", "inhibition",
+    "GABAergic", "inhibitory postsynaptic"
+  ),
+  
+  Epigenetic = c(
+    "chromatin", "histone", "methylation", "acetylation", "epigenetic",
+    "transcription factor", "DNA binding", "gene expression",
+    "transcriptional regulation"
+  ),
+  
+  Signaling = c(
+    "signal transduction", "second messenger", "kinase", "phosphatase",
+    "calcium", "cAMP", "protein phosphorylation", "MAPK", "ERK",
+    "PI3K", "Akt", "Ras", "GTPase"
+  )
+)
+
+cat("========================================\n")
+cat("CELL TYPE-SPECIFIC NEUROCOGNITIVE ANALYSIS\n")
+cat("========================================\n")
+cat("Creating separate heatmaps for each cell type group\n")
+cat("Cell type groups:", length(CELL_TYPE_GROUPS), "\n")
+cat("Output directory:", OUTPUT_DIR, "\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# FUNCTIONS
+# ====================================================================
+
+#' Classify GO term into neurocognitive category
+classify_neurocognitive_category <- function(description) {
+  description_lower <- tolower(description)
+  categories <- character(length(description))
+  
+  for (i in seq_along(description)) {
+    matched_categories <- c()
+    
+    for (cat_name in names(NEUROCOGNITIVE_KEYWORDS)) {
+      keywords <- NEUROCOGNITIVE_KEYWORDS[[cat_name]]
+      if (any(sapply(keywords, function(kw) grepl(kw, description_lower[i], fixed = FALSE)))) {
+        matched_categories <- c(matched_categories, cat_name)
+      }
+    }
+    
+    if (length(matched_categories) > 0) {
+      categories[i] <- paste(matched_categories, collapse = ";")
+    } else {
+      categories[i] <- "Other"
+    }
+  }
+  
+  return(categories)
+}
+
+#' Create heatmap for a specific cell type group
+create_celltype_group_heatmap <- function(neurocog_results, group_name, group_info, 
+                                          top_n_terms = 20, min_scenarios = 2) {
+  
+  cat("  Processing:", group_info$display_name, "\n")
+  
+  # Filter for this cell type group
+  group_data <- neurocog_results %>%
+    filter(CellType %in% group_info$cell_types)
+  
+  if (nrow(group_data) == 0) {
+    cat("    No data found for this group\n")
+    return(NULL)
+  }
+  
+  cat("    Found", n_distinct(group_data$Description), "unique terms\n")
+  
+  # Get top terms that appear in multiple scenarios
+  top_terms <- group_data %>%
+    group_by(Description) %>%
+    summarise(
+      N_Scenarios = n_distinct(Scenario),
+      N_CellTypes_in_Group = n_distinct(CellType),
+      Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    filter(N_Scenarios >= min_scenarios) %>%
+    arrange(desc(N_CellTypes_in_Group), Mean_pAdj) %>%
+    head(top_n_terms)
+  
+  if (nrow(top_terms) < 5) {
+    cat("    Insufficient terms (need at least 5) - skipping\n")
+    return(NULL)
+  }
+  
+  cat("    Using", nrow(top_terms), "top terms\n")
+  
+  # Create matrix: Terms × (Scenario_CellType combinations)
+  heatmap_data <- group_data %>%
+    filter(Description %in% top_terms$Description) %>%
+    mutate(NegLog10P = -log10(p.adjust)) %>%
+    dplyr::select(Description, Scenario, CellType, NegLog10P, Neurocognitive_Category) %>%
+    group_by(Description, Scenario, CellType) %>%
+    summarise(
+      NegLog10P = mean(NegLog10P, na.rm = TRUE),
+      Neurocognitive_Category = first(Neurocognitive_Category),
+      .groups = 'drop'
+    ) %>%
+    unite("Scenario_CellType", Scenario, CellType, sep = "\n") %>%
+    pivot_wider(names_from = Scenario_CellType, values_from = NegLog10P)
+  
+  heatmap_data[is.na(heatmap_data)] <- 0
+  
+  # Extract category info before converting to matrix
+  category_info <- heatmap_data %>%
+    dplyr::select(Description, Neurocognitive_Category)
+  
+  heatmap_matrix <- as.matrix(heatmap_data[, -c(1, 2)])
+  rownames(heatmap_matrix) <- substr(heatmap_data$Description, 1, 70)
+  
+  # Create color function
+  max_val <- max(heatmap_matrix)
+  col_fun <- colorRamp2(seq(0, max_val, length.out = 5), 
+                       viridis(5, option = VIRIDIS_PALETTE))
+  
+  # Row annotation for categories
+  # Split multi-category annotations
+  primary_categories <- sapply(category_info$Neurocognitive_Category, function(x) {
+    strsplit(x, ";")[[1]][1]  # Take first category
+  })
+  
+  category_colors <- c(
+    "Synaptic" = "#440154",
+    "Neuronal_Development" = "#31688E",
+    "Myelination" = "#35B779",
+    "Cognitive_Function" = "#FDE724",
+    "Astrocyte_Metabolic" = "#6DCD59",
+    "Inhibitory_Signaling" = "#B4DE2C",
+    "Epigenetic" = "#FCA636",
+    "Signaling" = "#E16462"
+  )
+  
+  row_ha <- rowAnnotation(
+    Category = primary_categories,
+    col = list(Category = category_colors),
+    show_annotation_name = TRUE,
+    annotation_name_side = "top"
+  )
+  
+  # Create heatmap
+  pdf(file.path(OUTPUT_DIR, paste0("heatmap_", group_name, ".pdf")), 
+      width = 14, height = max(10, nrow(heatmap_matrix) * 0.25))
+  
+  ht <- Heatmap(heatmap_matrix,
+                name = "-log10(p.adj)",
+                col = col_fun,
+                cluster_rows = TRUE,
+                cluster_columns = TRUE,
+                show_row_names = TRUE,
+                show_column_names = TRUE,
+                row_names_gp = gpar(fontsize = 9),
+                column_names_gp = gpar(fontsize = 8),
+                column_names_rot = 45,
+                column_title = paste(group_info$display_name, "- Neurocognitive Pathways"),
+                row_title = "GO Terms",
+                right_annotation = row_ha,
+                heatmap_legend_param = list(
+                  title = "-log10(p.adjust)",
+                  direction = "vertical"
+                ))
+  
+  draw(ht)
+  dev.off()
+  
+  cat("    ✓ Saved heatmap\n")
+  
+  # Also save the data table
+  output_table <- group_data %>%
+    filter(Description %in% top_terms$Description) %>%
+    dplyr::select(Description, Scenario, CellType, p.adjust, Neurocognitive_Category) %>%
+    arrange(Description, Scenario, CellType)
+  
+  write.csv(output_table,
+            file.path(OUTPUT_DIR, paste0("data_", group_name, ".csv")),
+            row.names = FALSE)
+  
+  return(list(matrix = heatmap_matrix, terms = top_terms))
+}
+
+#' Create category-focused heatmaps for specific cell type group
+create_category_celltype_heatmap <- function(neurocog_results, group_name, group_info, 
+                                             category_name, top_n_terms = 15) {
+  
+  # Filter for this cell type group AND this category
+  category_data <- neurocog_results %>%
+    filter(CellType %in% group_info$cell_types) %>%
+    filter(grepl(category_name, Neurocognitive_Category))
+  
+  if (nrow(category_data) < 5) {
+    return(NULL)
+  }
+  
+  # Get top terms
+  top_terms <- category_data %>%
+    group_by(Description) %>%
+    summarise(Mean_pAdj = mean(p.adjust, na.rm = TRUE), .groups = 'drop') %>%
+    arrange(Mean_pAdj) %>%
+    head(top_n_terms)
+  
+  if (nrow(top_terms) < 3) {
+    return(NULL)
+  }
+  
+  # Create matrix
+  heatmap_data <- category_data %>%
+    filter(Description %in% top_terms$Description) %>%
+    mutate(NegLog10P = -log10(p.adjust)) %>%
+    dplyr::select(Description, Scenario, CellType, NegLog10P) %>%
+    group_by(Description, Scenario, CellType) %>%
+    summarise(NegLog10P = mean(NegLog10P, na.rm = TRUE), .groups = 'drop') %>%
+    unite("Scenario_CellType", Scenario, CellType, sep = "\n") %>%
+    pivot_wider(names_from = Scenario_CellType, values_from = NegLog10P)
+  
+  heatmap_data[is.na(heatmap_data)] <- 0
+  
+  heatmap_matrix <- as.matrix(heatmap_data[, -1])
+  rownames(heatmap_matrix) <- substr(heatmap_data$Description, 1, 70)
+  
+  # Create heatmap
+  col_fun <- colorRamp2(seq(0, max(heatmap_matrix), length.out = 5), 
+                       viridis(5, option = VIRIDIS_PALETTE))
+  
+  pdf(file.path(OUTPUT_DIR, paste0("heatmap_", group_name, "_", category_name, ".pdf")), 
+      width = 14, height = max(8, nrow(heatmap_matrix) * 0.3))
+  
+  ht <- Heatmap(heatmap_matrix,
+                name = "-log10(p.adj)",
+                col = col_fun,
+                cluster_rows = TRUE,
+                cluster_columns = TRUE,
+                show_row_names = TRUE,
+                show_column_names = TRUE,
+                row_names_gp = gpar(fontsize = 9),
+                column_names_gp = gpar(fontsize = 8),
+                column_names_rot = 45,
+                column_title = paste(group_info$display_name, "-", category_name, "Pathways"),
+                heatmap_legend_param = list(
+                  title = "-log10(p.adjust)",
+                  direction = "vertical"
+                ))
+  
+  draw(ht)
+  dev.off()
+  
+  return(heatmap_matrix)
+}
+
+#' Create summary comparison across cell type groups
+create_celltype_group_summary <- function(neurocog_results) {
+  
+  cat("Creating cell type group summary...\n")
+  
+  # Add group membership
+  results_with_groups <- neurocog_results
+  results_with_groups$CellTypeGroup <- NA
+  
+  for (group_name in names(CELL_TYPE_GROUPS)) {
+    group_info <- CELL_TYPE_GROUPS[[group_name]]
+    results_with_groups$CellTypeGroup[results_with_groups$CellType %in% group_info$cell_types] <- 
+      group_info$display_name
+  }
+  
+  # Summary by group and category
+  summary_table <- results_with_groups %>%
+    filter(!is.na(CellTypeGroup)) %>%
+    separate_rows(Neurocognitive_Category, sep = ";") %>%
+    group_by(CellTypeGroup, Neurocognitive_Category) %>%
+    summarise(
+      N_Terms = n_distinct(Description),
+      N_CellTypes = n_distinct(CellType),
+      N_Scenarios = n_distinct(Scenario),
+      Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    arrange(CellTypeGroup, desc(N_Terms))
+  
+  write.csv(summary_table,
+            file.path(OUTPUT_DIR, "celltype_group_category_summary.csv"),
+            row.names = FALSE)
+  
+  # Visualize
+  p <- ggplot(summary_table, 
+              aes(x = Neurocognitive_Category, y = N_Terms, fill = CellTypeGroup)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_viridis_d(option = VIRIDIS_PALETTE) +
+    coord_flip() +
+    labs(title = "Neurocognitive Pathway Enrichment by Cell Type Group",
+         x = "Neurocognitive Category",
+         y = "Number of Enriched Terms",
+         fill = "Cell Type Group") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+  
+  ggsave(file.path(OUTPUT_DIR, "celltype_group_category_comparison.pdf"), 
+         p, width = 12, height = 8, dpi = 300)
+  
+  cat("  ✓ Summary complete\n\n")
+  
+  return(summary_table)
+}
+
+# ====================================================================
+# DATA LOADING
+# ====================================================================
+
+# Verify data is loaded
+if (!exists("go_results")) {
+  stop("Error: go_results not found. Please load your GO enrichment data first.")
+}
+
+cat("GO results loaded:", nrow(go_results), "terms\n\n")
+
+# ====================================================================
+# MAIN EXECUTION
+# ====================================================================
+
+cat("========================================\n")
+cat("FILTERING FOR NEUROCOGNITIVE TERMS\n")
+cat("========================================\n\n")
+
+# Classify and filter
+go_results$Neurocognitive_Category <- classify_neurocognitive_category(go_results$Description)
+
+neurocog_results <- go_results %>%
+  filter(Neurocognitive_Category != "Other")
+
+cat("Filtered to", nrow(neurocog_results), "neurocognitive-relevant terms\n")
+cat(sprintf("(%.1f%% of total)\n\n", 100 * nrow(neurocog_results) / nrow(go_results)))
+
+# Save all filtered results
+write.csv(neurocog_results,
+          file.path(OUTPUT_DIR, "all_neurocognitive_terms_by_celltype.csv"),
+          row.names = FALSE)
+
+# ====================================================================
+# CREATE CELL TYPE-SPECIFIC HEATMAPS
+# ====================================================================
+
+cat("========================================\n")
+cat("CREATING CELL TYPE-SPECIFIC HEATMAPS\n")
+cat("========================================\n\n")
+
+for (group_name in names(CELL_TYPE_GROUPS)) {
+  group_info <- CELL_TYPE_GROUPS[[group_name]]
+  
+  # Main heatmap for this cell type group
+  create_celltype_group_heatmap(neurocog_results, group_name, group_info, 
+                                 top_n_terms = 20, min_scenarios = 2)
+  
+  cat("\n")
+}
+
+# ====================================================================
+# CREATE CATEGORY × CELLTYPE FOCUSED HEATMAPS
+# ====================================================================
+
+cat("========================================\n")
+cat("CREATING CATEGORY-SPECIFIC HEATMAPS\n")
+cat("========================================\n\n")
+
+# For major cell types, create category-specific heatmaps
+major_cell_types <- c("Glutamatergic", "Oligodendrocytes", "Astrocytes", "GABAergic")
+key_categories <- c("Synaptic", "Neuronal_Development", "Myelination", "Epigenetic")
+
+for (group_name in major_cell_types) {
+  if (group_name %in% names(CELL_TYPE_GROUPS)) {
+    group_info <- CELL_TYPE_GROUPS[[group_name]]
+    cat("Processing", group_info$display_name, "by category:\n")
+    
+    for (category in key_categories) {
+      cat("  -", category, "...")
+      result <- create_category_celltype_heatmap(neurocog_results, group_name, 
+                                                  group_info, category, top_n_terms = 15)
+      if (!is.null(result)) {
+        cat(" ✓\n")
+      } else {
+        cat(" (skipped)\n")
+      }
+    }
+    cat("\n")
+  }
+}
+
+# ====================================================================
+# CREATE SUMMARY
+# ====================================================================
+
+cat("========================================\n")
+cat("CREATING SUMMARY ANALYSES\n")
+cat("========================================\n\n")
+
+summary_table <- create_celltype_group_summary(neurocog_results)
+
+# ====================================================================
+# FINAL SUMMARY
+# ====================================================================
+
+cat("\n========================================\n")
+cat("CELL TYPE-SPECIFIC ANALYSIS COMPLETE!\n")
+cat("========================================\n")
+cat("Results saved in:", OUTPUT_DIR, "\n\n")
+
+cat("Files created:\n")
+cat("  MAIN HEATMAPS (one per cell type group):\n")
+for (group_name in names(CELL_TYPE_GROUPS)) {
+  cat("    - heatmap_", group_name, ".pdf\n", sep = "")
+  cat("    - data_", group_name, ".csv\n", sep = "")
+}
+
+cat("\n  CATEGORY-SPECIFIC HEATMAPS:\n")
+for (group_name in major_cell_types) {
+  for (category in key_categories) {
+    cat("    - heatmap_", group_name, "_", category, ".pdf (if data available)\n", sep = "")
+  }
+}
+
+cat("\n  SUMMARY FILES:\n")
+cat("    - all_neurocognitive_terms_by_celltype.csv\n")
+cat("    - celltype_group_category_summary.csv\n")
+cat("    - celltype_group_category_comparison.pdf\n")
+
+cat("\n========================================\n")
+cat("Now you have clean, readable heatmaps!\n")
+cat("Each cell type group has its own focused visualization.\n")
+cat("========================================\n")
+
+
+
+
+
+
+
+> sessionInfo()
+R version 4.4.0 (2024-04-24)
+Platform: aarch64-apple-darwin20
+Running under: macOS Sonoma 14.7.1
+
+Matrix products: default
+BLAS:   /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib 
+LAPACK: /Library/Frameworks/R.framework/Versions/4.4-arm64/Resources/lib/libRlapack.dylib;  LAPACK version 3.12.0
+
+locale:
+  [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+time zone: Europe/Paris
+tzcode source: internal
+
+attached base packages:
+  [1] grid      stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+  [1] UpSetR_1.4.0          VennDiagram_1.7.3     futile.logger_1.4.3   circlize_0.4.16       ComplexHeatmap_2.20.0
+[6] viridis_0.6.5         viridisLite_0.4.2     lubridate_1.9.4       forcats_1.0.0         stringr_1.5.1        
+[11] dplyr_1.1.4           purrr_1.0.4           readr_2.1.5           tidyr_1.3.1           tibble_3.2.1         
+[16] ggplot2_3.5.1         tidyverse_2.0.0      
+
+loaded via a namespace (and not attached):
+  [1] gtable_0.3.6         shape_1.4.6.1        rjson_0.2.23         GlobalOptions_0.1.2  tzdb_0.5.0          
+[6] Cairo_1.6-2          vctrs_0.6.5          tools_4.4.0          generics_0.1.3       stats4_4.4.0        
+[11] parallel_4.4.0       cluster_2.1.8.1      pkgconfig_2.0.3      RColorBrewer_1.1-3   S4Vectors_0.42.1    
+[16] lifecycle_1.0.4      farver_2.1.2         compiler_4.4.0       textshaping_1.0.0    munsell_0.5.1       
+[21] codetools_0.2-20     clue_0.3-66          pillar_1.10.2        crayon_1.5.3         iterators_1.0.14    
+[26] foreach_1.5.2        tidyselect_1.2.1     digest_0.6.37        stringi_1.8.7        labeling_0.4.3      
+[31] colorspace_2.1-1     cli_3.6.4            magrittr_2.0.3       withr_3.0.2          scales_1.3.0        
+[36] timechange_0.3.0     lambda.r_1.2.4       matrixStats_1.5.0    gridExtra_2.3        ragg_1.3.3          
+[41] png_0.1-8            GetoptLong_1.0.5     hms_1.1.3            IRanges_2.38.1       doParallel_1.0.17   
+[46] rlang_1.1.5          futile.options_1.0.1 Rcpp_1.0.14          glue_1.8.0           formatR_1.14        
+[51] BiocGenerics_0.50.0  rstudioapi_0.17.1    R6_2.6.1             plyr_1.8.9           systemfonts_1.2.2  
