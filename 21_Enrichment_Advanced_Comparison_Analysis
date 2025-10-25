@@ -1,0 +1,687 @@
+# ====================================================================
+# ADVANCED COMPARISON ANALYSIS - TASK-SPECIFIC VERSION
+# Compare enrichment results across scenarios with TASK awareness
+# New dimensions: Strong/Basic × FDR thresholds × Tasks (A,B,C,D)
+# ====================================================================
+
+library(tidyverse)
+library(viridis)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+library(VennDiagram)
+library(UpSetR)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+ENRICHMENT_DIR <- "GO_KEGG_Enrichment_Results_TASK_SPECIFIC"
+OUTPUT_DIR <- file.path(ENRICHMENT_DIR, "Comparison_Analyses")
+
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+VIRIDIS_PALETTE <- "viridis"
+TASKS <- c("TaskA", "TaskB", "TaskC", "TaskD")
+
+cat("========================================\n")
+cat("ADVANCED COMPARISON ANALYSIS - TASK-SPECIFIC\n")
+cat("========================================\n")
+cat("Enrichment directory:", ENRICHMENT_DIR, "\n")
+cat("Output directory:", OUTPUT_DIR, "\n")
+cat("Task-aware analysis: ENABLED\n")
+cat("Tasks:", paste(TASKS, collapse = ", "), "\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# FUNCTIONS
+# ====================================================================
+
+#' Load all GO BP results from all scenarios - TASK-AWARE
+load_all_go_bp_results <- function() {
+  
+  cat("Loading GO BP results from all scenarios (task-specific)...\n")
+  
+  all_results <- list()
+  
+  scenarios <- list(
+    strong_FDR05 = "strong_FDR05",
+    strong_FDR10 = "strong_FDR10",
+    basic_FDR05 = "basic_FDR05",
+    basic_FDR10 = "basic_FDR10"
+  )
+  
+  for (scenario_name in names(scenarios)) {
+    scenario_dir <- file.path(ENRICHMENT_DIR, scenarios[[scenario_name]])
+    
+    if (!dir.exists(scenario_dir)) {
+      cat("  Warning: Scenario directory not found:", scenario_name, "\n")
+      next
+    }
+    
+    # Find all GO BP CSV files (including task-specific)
+    go_bp_files <- list.files(scenario_dir, 
+                               pattern = "_GO_BP\\.csv$", 
+                               recursive = TRUE, 
+                               full.names = TRUE)
+    
+    for (file in go_bp_files) {
+      filename <- basename(file)
+      
+      # NEW: Parse task-specific filenames
+      # Pattern: [CellType]_[Task]_GO_BP.csv
+      # Example: Astrocyte_TaskA_GO_BP.csv
+      
+      filename_clean <- gsub("_GO_BP\\.csv$", "", filename)
+      
+      # Check if this is a task-specific file
+      has_task <- FALSE
+      task <- NA
+      cell_type <- filename_clean
+      
+      for (t in TASKS) {
+        if (grepl(paste0(t, "$"), filename_clean)) {
+          has_task <- TRUE
+          task <- t
+          cell_type <- gsub(paste0("_", t, "$"), "", filename_clean)
+          break
+        }
+      }
+      
+      # Read the data
+      go_data <- tryCatch({
+        read.csv(file, stringsAsFactors = FALSE)
+      }, error = function(e) NULL)
+      
+      if (!is.null(go_data) && nrow(go_data) > 0) {
+        go_data$Scenario <- scenario_name
+        go_data$CellType <- cell_type
+        go_data$Task <- ifelse(has_task, task, "AllTasks")  # Label pooled results
+        all_results[[paste(scenario_name, cell_type, task, sep = "_")]] <- go_data
+      }
+    }
+  }
+  
+  if (length(all_results) == 0) {
+    stop("No GO BP results found!")
+  }
+  
+  combined_results <- bind_rows(all_results)
+  cat("  Loaded", nrow(combined_results), "GO BP terms from", 
+      length(all_results), "analyses\n")
+  cat("  Tasks represented:", paste(unique(combined_results$Task), collapse = ", "), "\n\n")
+  
+  return(combined_results)
+}
+
+#' Load all KEGG results - TASK-AWARE
+load_all_kegg_results <- function() {
+  
+  cat("Loading KEGG results from all scenarios (task-specific)...\n")
+  
+  all_results <- list()
+  
+  scenarios <- list(
+    strong_FDR05 = "strong_FDR05",
+    strong_FDR10 = "strong_FDR10",
+    basic_FDR05 = "basic_FDR05",
+    basic_FDR10 = "basic_FDR10"
+  )
+  
+  for (scenario_name in names(scenarios)) {
+    scenario_dir <- file.path(ENRICHMENT_DIR, scenarios[[scenario_name]])
+    
+    if (!dir.exists(scenario_dir)) {
+      next
+    }
+    
+    kegg_files <- list.files(scenario_dir, 
+                              pattern = "_KEGG\\.csv$", 
+                              recursive = TRUE, 
+                              full.names = TRUE)
+    
+    for (file in kegg_files) {
+      filename <- basename(file)
+      filename_clean <- gsub("_KEGG\\.csv$", "", filename)
+      
+      # Parse task if present
+      has_task <- FALSE
+      task <- NA
+      cell_type <- filename_clean
+      
+      for (t in TASKS) {
+        if (grepl(paste0(t, "$"), filename_clean)) {
+          has_task <- TRUE
+          task <- t
+          cell_type <- gsub(paste0("_", t, "$"), "", filename_clean)
+          break
+        }
+      }
+      
+      kegg_data <- tryCatch({
+        read.csv(file, stringsAsFactors = FALSE)
+      }, error = function(e) NULL)
+      
+      if (!is.null(kegg_data) && nrow(kegg_data) > 0) {
+        kegg_data$Scenario <- scenario_name
+        kegg_data$CellType <- cell_type
+        kegg_data$Task <- ifelse(has_task, task, "AllTasks")
+        all_results[[paste(scenario_name, cell_type, task, sep = "_")]] <- kegg_data
+      }
+    }
+  }
+  
+  if (length(all_results) == 0) {
+    cat("  No KEGG results found\n\n")
+    return(NULL)
+  }
+  
+  combined_results <- bind_rows(all_results)
+  cat("  Loaded", nrow(combined_results), "KEGG pathways from", 
+      length(all_results), "analyses\n\n")
+  
+  return(combined_results)
+}
+
+#' NEW: Analyze task progression patterns
+analyze_task_progression <- function(go_results) {
+  
+  cat("Analyzing task progression patterns (A→B→C→D)...\n")
+  
+  # Filter to only task-specific results
+  task_results <- go_results %>%
+    filter(Task != "AllTasks")
+  
+  if (nrow(task_results) == 0) {
+    cat("  No task-specific results found\n\n")
+    return(NULL)
+  }
+  
+  # Find terms that appear in multiple tasks
+  term_task_presence <- task_results %>%
+    group_by(Description, CellType, Scenario) %>%
+    summarise(
+      Tasks_Present = paste(sort(unique(Task)), collapse = ","),
+      N_Tasks = n_distinct(Task),
+      Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    )
+  
+  # Classify progression patterns
+  term_task_presence <- term_task_presence %>%
+    mutate(
+      Progression_Pattern = case_when(
+        N_Tasks == 4 ~ "All Tasks (A-D)",
+        N_Tasks == 3 ~ "Three Tasks",
+        N_Tasks == 2 ~ "Two Tasks",
+        N_Tasks == 1 ~ "Single Task",
+        TRUE ~ "Other"
+      )
+    )
+  
+  write.csv(term_task_presence, 
+            file.path(OUTPUT_DIR, "task_progression_patterns.csv"), 
+            row.names = FALSE)
+  
+  # Visualize progression patterns
+  pattern_summary <- term_task_presence %>%
+    count(Progression_Pattern) %>%
+    mutate(Percentage = n / sum(n) * 100)
+  
+  p1 <- ggplot(pattern_summary, 
+               aes(x = reorder(Progression_Pattern, -n), y = n, fill = Progression_Pattern)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = sprintf("%d\n(%.1f%%)", n, Percentage)), 
+              vjust = -0.5, size = 3.5) +
+    scale_fill_viridis_d(option = VIRIDIS_PALETTE) +
+    labs(title = "GO Term Distribution by Task Presence",
+         subtitle = "How many tasks show enrichment for each term?",
+         x = "Progression Pattern",
+         y = "Number of Terms") +
+    theme_minimal() +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  ggsave(file.path(OUTPUT_DIR, "task_progression_distribution.pdf"), 
+         p1, width = 10, height = 8, dpi = 300)
+  
+  # Find terms specific to harder tasks (C, D only)
+  hard_task_terms <- term_task_presence %>%
+    filter(grepl("TaskC", Tasks_Present) | grepl("TaskD", Tasks_Present)) %>%
+    filter(!grepl("TaskA", Tasks_Present) & !grepl("TaskB", Tasks_Present)) %>%
+    arrange(Mean_pAdj) %>%
+    head(20)
+  
+  if (nrow(hard_task_terms) > 0) {
+    write.csv(hard_task_terms, 
+              file.path(OUTPUT_DIR, "hard_task_specific_terms.csv"), 
+              row.names = FALSE)
+    
+    p2 <- ggplot(hard_task_terms, 
+                 aes(x = reorder(Description, -Mean_pAdj), 
+                     y = -log10(Mean_pAdj),
+                     fill = Tasks_Present)) +
+      geom_bar(stat = "identity") +
+      scale_fill_viridis_d(option = VIRIDIS_PALETTE) +
+      coord_flip() +
+      labs(title = "Terms Specific to Harder Tasks (C, D)",
+           subtitle = "Pathways that emerge only in difficult cognitive challenges",
+           x = "GO Term",
+           y = "-log10(Mean p.adjust)",
+           fill = "Tasks") +
+      theme_minimal()
+    
+    ggsave(file.path(OUTPUT_DIR, "hard_task_specific_terms_plot.pdf"), 
+           p2, width = 12, height = 8, dpi = 300)
+  }
+  
+  cat("  ✓ Task progression analysis complete\n")
+  cat("    - All tasks (A-D):", sum(term_task_presence$N_Tasks == 4), "terms\n")
+  cat("    - Hard tasks only (C,D):", nrow(hard_task_terms), "terms\n\n")
+  
+  return(term_task_presence)
+}
+
+#' NEW: Compare enrichment within each task
+compare_within_tasks <- function(go_results) {
+  
+  cat("Comparing Strong vs Basic within each task...\n")
+  
+  task_results <- go_results %>%
+    filter(Task != "AllTasks")
+  
+  if (nrow(task_results) == 0) {
+    return(NULL)
+  }
+  
+  # For each task, compare strong vs basic
+  comparison_list <- list()
+  
+  for (task in TASKS) {
+    task_data <- task_results %>%
+      filter(Task == task)
+    
+    if (nrow(task_data) == 0) next
+    
+    strong_terms <- task_data %>%
+      filter(grepl("strong", Scenario)) %>%
+      group_by(Description) %>%
+      summarise(Strong_Count = dplyr::n(), .groups = 'drop')
+    
+    basic_terms <- task_data %>%
+      filter(grepl("basic", Scenario)) %>%
+      group_by(Description) %>%
+      summarise(Basic_Count = dplyr::n(), .groups = 'drop')
+    
+    task_comparison <- full_join(strong_terms, basic_terms, by = "Description") %>%
+      replace_na(list(Strong_Count = 0, Basic_Count = 0)) %>%
+      mutate(
+        Task = task,
+        Pattern = case_when(
+          Strong_Count > 0 & Basic_Count > 0 ~ "Both",
+          Strong_Count > 0 & Basic_Count == 0 ~ "Strong Only",
+          Strong_Count == 0 & Basic_Count > 0 ~ "Basic Only",
+          TRUE ~ "Neither"
+        )
+      ) %>%
+      filter(Pattern != "Neither")
+    
+    comparison_list[[task]] <- task_comparison
+  }
+  
+  all_comparisons <- bind_rows(comparison_list)
+  
+  write.csv(all_comparisons, 
+            file.path(OUTPUT_DIR, "strong_vs_basic_by_task.csv"), 
+            row.names = FALSE)
+  
+  # Visualize pattern distribution by task
+  pattern_by_task <- all_comparisons %>%
+    count(Task, Pattern) %>%
+    group_by(Task) %>%
+    mutate(Percentage = n / sum(n) * 100)
+  
+  p <- ggplot(pattern_by_task, 
+              aes(x = Task, y = n, fill = Pattern)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_text(aes(label = sprintf("%.0f%%", Percentage)), 
+              position = position_dodge(width = 0.9), 
+              vjust = -0.5, size = 3) +
+    scale_fill_viridis_d(option = VIRIDIS_PALETTE) +
+    labs(title = "Strong vs Basic Rescue: Pattern by Task Difficulty",
+         subtitle = "How rescue mechanisms differ across cognitive complexity",
+         x = "Task (A→D = Easy→Hard)",
+         y = "Number of Terms",
+         fill = "Enrichment") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+  
+  ggsave(file.path(OUTPUT_DIR, "strong_vs_basic_by_task_plot.pdf"), 
+         p, width = 10, height = 6, dpi = 300)
+  
+  cat("  ✓ Within-task comparison complete\n\n")
+  
+  return(all_comparisons)
+}
+
+#' NEW: Create task × cell type heatmap
+create_task_celltype_heatmap <- function(go_results, top_n_terms = 20) {
+  
+  cat("Creating Task × Cell Type heatmap...\n")
+  
+  task_results <- go_results %>%
+    filter(Task != "AllTasks")
+  
+  if (nrow(task_results) == 0) {
+    cat("  No task-specific results available\n\n")
+    return(NULL)
+  }
+  
+  # Get top terms that appear across multiple tasks
+  top_terms <- task_results %>%
+    group_by(Description) %>%
+    summarise(
+      N_Tasks = n_distinct(Task),
+      Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    filter(N_Tasks >= 2) %>%  # Only terms in 2+ tasks
+    arrange(Mean_pAdj) %>%
+    head(top_n_terms) %>%
+    pull(Description)
+  
+  # Create matrix - aggregate duplicates by taking mean
+  heatmap_data <- task_results %>%
+    filter(Description %in% top_terms) %>%
+    mutate(NegLog10P = -log10(p.adjust)) %>%
+    dplyr::select(Description, CellType, Task, NegLog10P) %>%
+    # First, aggregate duplicates within same Description + CellType + Task
+    group_by(Description, CellType, Task) %>%
+    summarise(NegLog10P = mean(NegLog10P, na.rm = TRUE), .groups = 'drop') %>%
+    unite("CellType_Task", CellType, Task, sep = "_") %>%
+    pivot_wider(names_from = CellType_Task, 
+                values_from = NegLog10P)
+  
+  # Replace NA with 0 after pivot_wider (compatible with all tidyr versions)
+  heatmap_data[is.na(heatmap_data)] <- 0
+  
+  heatmap_matrix <- as.matrix(heatmap_data[, -1])
+  rownames(heatmap_matrix) <- substr(heatmap_data$Description, 1, 60)
+  
+  # Create heatmap
+  col_fun <- colorRamp2(c(0, 2, 4, 6, 8), 
+                       viridis(5, option = VIRIDIS_PALETTE))
+  
+  pdf(file.path(OUTPUT_DIR, "task_celltype_heatmap.pdf"), 
+      width = 20, height = 14)
+  
+  ht <- Heatmap(heatmap_matrix,
+                name = "-log10\n(p.adjust)",
+                col = col_fun,
+                cluster_rows = TRUE,
+                cluster_columns = TRUE,
+                show_row_names = TRUE,
+                show_column_names = TRUE,
+                row_names_gp = gpar(fontsize = 8),
+                column_names_gp = gpar(fontsize = 6),
+                column_names_rot = 45,
+                column_title = "Cell Type × Task Combinations",
+                heatmap_legend_param = list(
+                  title = "-log10(p.adjust)",
+                  direction = "vertical"
+                ))
+  
+  draw(ht)
+  dev.off()
+  
+  cat("  ✓ Task × Cell Type heatmap saved\n\n")
+}
+
+#' Create overlap analysis between scenarios
+create_overlap_analysis <- function(go_results, top_n = 50) {
+  
+  cat("Creating overlap analysis...\n")
+  
+  # Get top terms from each scenario
+  term_lists <- list()
+  
+  for (scenario in unique(go_results$Scenario)) {
+    scenario_data <- go_results %>%
+      filter(Scenario == scenario) %>%
+      arrange(p.adjust) %>%
+      head(top_n)
+    
+    term_lists[[scenario]] <- unique(scenario_data$Description)
+  }
+  
+  # Create UpSet plot
+  upset_data <- fromList(term_lists)
+  
+  pdf(file.path(OUTPUT_DIR, "term_overlap_upset.pdf"), width = 12, height = 8)
+  upset(upset_data, 
+        sets = names(term_lists),
+        order.by = "freq",
+        main.bar.color = viridis(1),
+        matrix.color = viridis(1),
+        sets.bar.color = viridis(length(term_lists)))
+  dev.off()
+  
+  cat("  ✓ UpSet plot saved\n")
+  
+  # Calculate pairwise overlaps
+  overlap_matrix <- matrix(0, nrow = length(term_lists), ncol = length(term_lists))
+  rownames(overlap_matrix) <- names(term_lists)
+  colnames(overlap_matrix) <- names(term_lists)
+  
+  for (i in 1:length(term_lists)) {
+    for (j in 1:length(term_lists)) {
+      overlap <- length(intersect(term_lists[[i]], term_lists[[j]]))
+      union_size <- length(union(term_lists[[i]], term_lists[[j]]))
+      overlap_matrix[i, j] <- overlap / union_size  # Jaccard index
+    }
+  }
+  
+  # Plot overlap heatmap
+  col_fun <- colorRamp2(c(0, 0.5, 1), c("#440154FF", "#21908CFF", "#FDE725FF"))
+  
+  pdf(file.path(OUTPUT_DIR, "term_overlap_heatmap.pdf"), width = 8, height = 8)
+  Heatmap(overlap_matrix,
+          name = "Jaccard\nIndex",
+          col = col_fun,
+          cell_fun = function(j, i, x, y, width, height, fill) {
+            grid.text(sprintf("%.2f", overlap_matrix[i, j]), x, y, 
+                     gp = gpar(fontsize = 10))
+          },
+          cluster_rows = TRUE,
+          cluster_columns = TRUE,
+          row_names_side = "left",
+          column_names_rot = 45,
+          heatmap_legend_param = list(title = "Jaccard Index"))
+  dev.off()
+  
+  cat("  ✓ Overlap heatmap saved\n\n")
+  
+  return(overlap_matrix)
+}
+
+#' Find consistently enriched terms across scenarios
+find_consistent_terms <- function(go_results, min_scenarios = 3) {
+  
+  cat("Finding consistently enriched terms (present in >=", min_scenarios, "scenarios)...\n")
+  
+  term_presence <- go_results %>%
+    group_by(Description) %>%
+    summarise(
+      N_Scenarios = n_distinct(Scenario),
+      N_CellTypes = n_distinct(CellType),
+      N_Tasks = n_distinct(Task),
+      Scenarios = paste(unique(Scenario), collapse = ", "),
+      Tasks = paste(unique(Task), collapse = ", "),
+      Mean_pAdjust = mean(p.adjust, na.rm = TRUE),
+      Min_pAdjust = min(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    filter(N_Scenarios >= min_scenarios) %>%
+    arrange(desc(N_Scenarios), Mean_pAdjust)
+  
+  write.csv(term_presence, 
+            file.path(OUTPUT_DIR, "consistent_terms_across_scenarios.csv"), 
+            row.names = FALSE)
+  
+  cat("  Found", nrow(term_presence), "consistent terms\n")
+  
+  # Visualize top consistent terms
+  if (nrow(term_presence) > 0) {
+    top_consistent <- term_presence %>%
+      head(20)
+    
+    p <- ggplot(top_consistent, 
+                aes(x = reorder(Description, N_Scenarios), 
+                    y = N_Scenarios,
+                    fill = -log10(Mean_pAdjust))) +
+      geom_bar(stat = "identity") +
+      scale_fill_viridis_c(option = VIRIDIS_PALETTE) +
+      coord_flip() +
+      labs(title = "Most Consistently Enriched GO Terms",
+           subtitle = "Terms present across multiple scenarios and tasks",
+           x = "GO Term",
+           y = "Number of Scenarios",
+           fill = "-log10(Mean\np.adjust)") +
+      theme_minimal()
+    
+    ggsave(file.path(OUTPUT_DIR, "consistent_terms_barplot.pdf"), 
+           p, width = 12, height = 10, dpi = 300)
+    
+    cat("  ✓ Consistent terms plot saved\n\n")
+  }
+  
+  return(term_presence)
+}
+
+#' Compare Strong vs Basic rescue (overall)
+compare_strong_vs_basic <- function(go_results) {
+  
+  cat("Comparing Strong vs Basic rescue (overall)...\n")
+  
+  strong_terms <- go_results %>%
+    filter(grepl("strong", Scenario)) %>%
+    group_by(Description) %>%
+    summarise(
+      Strong_Count = dplyr::n(),
+      Strong_Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    )
+  
+  basic_terms <- go_results %>%
+    filter(grepl("basic", Scenario)) %>%
+    group_by(Description) %>%
+    summarise(
+      Basic_Count = dplyr::n(),
+      Basic_Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    )
+  
+  # Merge
+  comparison <- full_join(strong_terms, basic_terms, by = "Description") %>%
+    replace_na(list(Strong_Count = 0, Basic_Count = 0, 
+                   Strong_Mean_pAdj = 1, Basic_Mean_pAdj = 1)) %>%
+    mutate(
+      Enrichment_Pattern = case_when(
+        Strong_Count > 0 & Basic_Count > 0 ~ "Both",
+        Strong_Count > 0 & Basic_Count == 0 ~ "Strong Only",
+        Strong_Count == 0 & Basic_Count > 0 ~ "Basic Only",
+        TRUE ~ "Neither"
+      )
+    ) %>%
+    filter(Enrichment_Pattern != "Neither")
+  
+  write.csv(comparison, 
+            file.path(OUTPUT_DIR, "strong_vs_basic_comparison_overall.csv"), 
+            row.names = FALSE)
+  
+  # Create visualization
+  comparison_summary <- comparison %>%
+    count(Enrichment_Pattern) %>%
+    mutate(Percentage = n / sum(n) * 100)
+  
+  p <- ggplot(comparison_summary, 
+              aes(x = "", y = n, fill = Enrichment_Pattern)) +
+    geom_bar(stat = "identity", width = 1) +
+    coord_polar("y", start = 0) +
+    geom_text(aes(label = sprintf("%d\n(%.1f%%)", n, Percentage)),
+              position = position_stack(vjust = 0.5)) +
+    scale_fill_viridis_d(option = VIRIDIS_PALETTE) +
+    labs(title = "GO Term Enrichment: Strong vs Basic Rescue (Overall)",
+         fill = "Pattern") +
+    theme_void() +
+    theme(legend.position = "right")
+  
+  ggsave(file.path(OUTPUT_DIR, "strong_vs_basic_pieplot_overall.pdf"), 
+         p, width = 8, height = 6, dpi = 300)
+  
+  cat("  ✓ Strong vs Basic comparison saved\n")
+  cat("    - Both:", sum(comparison$Enrichment_Pattern == "Both"), "\n")
+  cat("    - Strong Only:", sum(comparison$Enrichment_Pattern == "Strong Only"), "\n")
+    cat("    - Basic Only:", sum(comparison$Enrichment_Pattern == "Basic Only"), "\n\n")
+  
+  return(comparison)
+}
+
+# ====================================================================
+# MAIN EXECUTION
+# ====================================================================
+
+cat("========================================\n")
+cat("LOADING DATA\n")
+cat("========================================\n\n")
+
+# Load all results
+go_results <- load_all_go_bp_results()
+kegg_results <- load_all_kegg_results()
+
+# ====================================================================
+# ANALYSES
+# ====================================================================
+
+cat("========================================\n")
+cat("PERFORMING COMPARISON ANALYSES\n")
+cat("========================================\n\n")
+
+# NEW: Task-specific analyses
+cat("--- TASK-SPECIFIC ANALYSES ---\n\n")
+task_progression <- analyze_task_progression(go_results)
+within_task_comparison <- compare_within_tasks(go_results)
+create_task_celltype_heatmap(go_results, top_n_terms = 25)
+
+cat("--- GENERAL COMPARISON ANALYSES ---\n\n")
+
+# 1. Overlap analysis
+overlap_matrix <- create_overlap_analysis(go_results, top_n = 100)
+
+# 2. Find consistent terms
+consistent_terms <- find_consistent_terms(go_results, min_scenarios = 2)
+
+# 3. Strong vs Basic comparison (overall)
+strong_vs_basic <- compare_strong_vs_basic(go_results)
+
+# ====================================================================
+# KEGG COMPARISON (if available)
+# ====================================================================
+
+if (!is.null(kegg_results)) {
+  cat("========================================\n")
+  cat("KEGG PATHWAY COMPARISONS\n")
+  cat("========================================\n\n")
+  
+  # Similar analyses for KEGG
+  kegg_consistent <- find_consistent_terms(kegg_results, min_scenarios = 2)
+  
+  # NEW: KEGG task progression
+  if ("Task" %in% colnames(kegg_results)) {
+    kegg_task_prog <- analyze_task_progression(kegg_results)
+  }
+}
