@@ -1,0 +1,547 @@
+# ====================================================================
+# NEUROCOGNITIVE-FOCUSED COMPARISON ANALYSIS
+# Enhanced version filtering for cognitive function-relevant pathways
+# Based on: Maternal choline supplementation & Down syndrome study
+# ====================================================================
+
+library(tidyverse)
+library(viridis)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+library(VennDiagram)
+library(UpSetR)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+ENRICHMENT_DIR <- "GO_KEGG_Enrichment_Results_TASK_SPECIFIC"
+OUTPUT_DIR <- file.path(ENRICHMENT_DIR, "Comparison_Analyses_Neurocognitive")
+
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+VIRIDIS_PALETTE <- "viridis"
+TASKS <- c("TaskA", "TaskB", "TaskC", "TaskD")
+
+# ====================================================================
+# NEUROCOGNITIVE FUNCTION CATEGORIES
+# Based on your chapter focus: attention, executive function, synaptic 
+# transmission, myelination, neuronal development
+# ====================================================================
+
+NEUROCOGNITIVE_KEYWORDS <- list(
+  
+  # Category 1: Synaptic Function & Neurotransmission
+  Synaptic = c(
+    "synap", "neurotransmit", "vesicle", "exocyto", "endocyto",
+    "receptor", "channel", "ion transport", "glutamate", "GABA",
+    "acetylcholine", "dopamine", "serotonin", "signal transduction",
+    "postsynaptic", "presynaptic", "dendritic spine", "axon guidance",
+    "chemical synaptic transmission"
+  ),
+  
+  # Category 2: Neuronal Development & Plasticity
+  Neuronal_Development = c(
+    "neuron development", "neuron differentiation", "neurogenesis",
+    "axon", "dendrite", "neurite", "growth cone", "cell morphogenesis",
+    "neural tube", "nervous system development", "brain development",
+    "synaptogenesis", "plasticity", "learning", "memory"
+  ),
+  
+  # Category 3: Myelination & Oligodendrocytes
+  Myelination = c(
+    "myelin", "oligodendro", "white matter", "axon ensheathment",
+    "gliogenesis", "glial cell differentiation", "compact myelin",
+    "myelination", "remyelination"
+  ),
+  
+  # Category 4: Attention & Executive Function
+  Cognitive_Function = c(
+    "attention", "cognition", "cognitive", "executive", "behavior",
+    "learning", "memory", "spatial", "working memory", "sensory",
+    "perception", "decision making", "response to stimulus"
+  ),
+  
+  # Category 5: Astrocyte Function & Metabolic Support
+  Astrocyte_Metabolic = c(
+    "astrocyte", "metabolic", "glucose", "lactate", "energy",
+    "ATP", "mitochondria", "oxidative phosphorylation", "glycolysis",
+    "neuron-glia", "potassium ion transport", "calcium signaling"
+  ),
+  
+  # Category 6: GABAergic & Inhibitory Signaling
+  Inhibitory_Signaling = c(
+    "GABA", "inhibitory", "interneuron", "chloride", "inhibition",
+    "GABAergic", "inhibitory postsynaptic"
+  ),
+  
+  # Category 7: Epigenetic & Chromatin Regulation
+  Epigenetic = c(
+    "chromatin", "histone", "methylation", "acetylation", "epigenetic",
+    "transcription factor", "DNA binding", "gene expression",
+    "transcriptional regulation"
+  ),
+  
+  # Category 8: Cell Signaling & Second Messengers
+  Signaling = c(
+    "signal transduction", "second messenger", "kinase", "phosphatase",
+    "calcium", "cAMP", "protein phosphorylation", "MAPK", "ERK",
+    "PI3K", "Akt", "Ras", "GTPase"
+  )
+)
+
+cat("========================================\n")
+cat("NEUROCOGNITIVE-FOCUSED COMPARISON ANALYSIS\n")
+cat("========================================\n")
+cat("Enrichment directory:", ENRICHMENT_DIR, "\n")
+cat("Output directory:", OUTPUT_DIR, "\n")
+cat("Filtering for neurocognitive-relevant pathways\n")
+cat("Categories:", length(NEUROCOGNITIVE_KEYWORDS), "\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# FUNCTIONS
+# ====================================================================
+
+#' Classify GO term into neurocognitive category
+classify_neurocognitive_category <- function(description) {
+  description_lower <- tolower(description)
+  
+  categories <- character(length(description))
+  
+  for (i in seq_along(description)) {
+    matched_categories <- c()
+    
+    for (cat_name in names(NEUROCOGNITIVE_KEYWORDS)) {
+      keywords <- NEUROCOGNITIVE_KEYWORDS[[cat_name]]
+      if (any(sapply(keywords, function(kw) grepl(kw, description_lower[i], fixed = FALSE)))) {
+        matched_categories <- c(matched_categories, cat_name)
+      }
+    }
+    
+    if (length(matched_categories) > 0) {
+      categories[i] <- paste(matched_categories, collapse = ";")
+    } else {
+      categories[i] <- "Other"
+    }
+  }
+  
+  return(categories)
+}
+
+#' Filter for neurocognitive-relevant terms
+filter_neurocognitive_terms <- function(go_results) {
+  
+  cat("Filtering for neurocognitive-relevant GO terms...\n")
+  
+  go_results$Neurocognitive_Category <- classify_neurocognitive_category(go_results$Description)
+  
+  # Keep terms that match at least one category
+  neurocog_results <- go_results %>%
+    filter(Neurocognitive_Category != "Other")
+  
+  cat("  Total terms:", nrow(go_results), "\n")
+  cat("  Neurocognitive terms:", nrow(neurocog_results), 
+      sprintf("(%.1f%%)\n", 100 * nrow(neurocog_results) / nrow(go_results)))
+  
+  # Show category breakdown
+  cat("\n  Category distribution:\n")
+  category_counts <- neurocog_results %>%
+    separate_rows(Neurocognitive_Category, sep = ";") %>%
+    count(Neurocognitive_Category) %>%
+    arrange(desc(n))
+  
+  for (i in 1:nrow(category_counts)) {
+    cat(sprintf("    %-30s %5d terms\n", 
+                category_counts$Neurocognitive_Category[i], 
+                category_counts$n[i]))
+  }
+  cat("\n")
+  
+  return(neurocog_results)
+}
+
+#' Create category-specific heatmaps
+create_category_heatmaps <- function(neurocog_results, top_n = 15) {
+  
+  cat("Creating category-specific heatmaps...\n")
+  
+  # For each major category, create a focused heatmap
+  main_categories <- c("Synaptic", "Neuronal_Development", "Myelination", 
+                       "Cognitive_Function", "Epigenetic")
+  
+  for (category in main_categories) {
+    cat("  Processing category:", category, "\n")
+    
+    # Filter for this category
+    category_data <- neurocog_results %>%
+      filter(grepl(category, Neurocognitive_Category))
+    
+    if (nrow(category_data) < 5) {
+      cat("    Skipping - insufficient terms\n")
+      next
+    }
+    
+    # Get top terms
+    top_terms <- category_data %>%
+      group_by(Description) %>%
+      summarise(Mean_pAdj = mean(p.adjust, na.rm = TRUE), .groups = 'drop') %>%
+      arrange(Mean_pAdj) %>%
+      head(top_n) %>%
+      pull(Description)
+    
+    # Create matrix
+    heatmap_data <- category_data %>%
+      filter(Description %in% top_terms) %>%
+      mutate(NegLog10P = -log10(p.adjust)) %>%
+      dplyr::select(Description, Scenario, CellType, NegLog10P) %>%
+      group_by(Description, Scenario, CellType) %>%
+      summarise(NegLog10P = mean(NegLog10P, na.rm = TRUE), .groups = 'drop') %>%
+      unite("Scenario_CellType", Scenario, CellType, sep = "_") %>%
+      pivot_wider(names_from = Scenario_CellType, values_from = NegLog10P)
+    
+    heatmap_data[is.na(heatmap_data)] <- 0
+    
+    if (ncol(heatmap_data) < 3) {
+      cat("    Skipping - insufficient data\n")
+      next
+    }
+    
+    heatmap_matrix <- as.matrix(heatmap_data[, -1])
+    rownames(heatmap_matrix) <- substr(heatmap_data$Description, 1, 70)
+    
+    # Create heatmap
+    col_fun <- colorRamp2(c(0, 2, 4, 6, 8), 
+                         viridis(5, option = VIRIDIS_PALETTE))
+    
+    pdf(file.path(OUTPUT_DIR, paste0("heatmap_", category, ".pdf")), 
+        width = 16, height = 10)
+    
+    ht <- Heatmap(heatmap_matrix,
+                  name = "-log10(p.adj)",
+                  col = col_fun,
+                  cluster_rows = TRUE,
+                  cluster_columns = TRUE,
+                  show_row_names = TRUE,
+                  show_column_names = TRUE,
+                  row_names_gp = gpar(fontsize = 9),
+                  column_names_gp = gpar(fontsize = 7),
+                  column_names_rot = 45,
+                  column_title = paste(category, "Pathways Across Scenarios & Cell Types"),
+                  heatmap_legend_param = list(
+                    title = "-log10(p.adjust)",
+                    direction = "vertical"
+                  ))
+    
+    draw(ht)
+    dev.off()
+    
+    cat("    ✓ Saved heatmap\n")
+  }
+  
+  cat("  ✓ Category heatmaps complete\n\n")
+}
+
+#' Task progression analysis for neurocognitive terms
+analyze_neurocognitive_task_progression <- function(neurocog_results) {
+  
+  cat("Analyzing task progression for neurocognitive terms...\n")
+  
+  # Filter to task-specific results
+  task_results <- neurocog_results %>%
+    filter(Task != "AllTasks")
+  
+  if (nrow(task_results) == 0) {
+    cat("  No task-specific data available\n\n")
+    return(NULL)
+  }
+  
+  # Analyze progression by category
+  category_task_summary <- task_results %>%
+    separate_rows(Neurocognitive_Category, sep = ";") %>%
+    group_by(Neurocognitive_Category, Task) %>%
+    summarise(
+      N_Terms = n_distinct(Description),
+      Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    )
+  
+  # Visualize
+  p <- ggplot(category_task_summary, 
+              aes(x = Task, y = N_Terms, fill = Neurocognitive_Category)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_viridis_d(option = VIRIDIS_PALETTE) +
+    labs(title = "Neurocognitive Pathway Enrichment Across Task Difficulty",
+         subtitle = "How cognitive processes change from easy (A) to hard (D) tasks",
+         x = "Task Difficulty (A = Easy → D = Hard)",
+         y = "Number of Enriched Terms",
+         fill = "Neurocognitive\nCategory") +
+    theme_minimal() +
+    theme(legend.position = "right",
+          axis.text.x = element_text(size = 11))
+  
+  ggsave(file.path(OUTPUT_DIR, "neurocognitive_task_progression.pdf"), 
+         p, width = 14, height = 8, dpi = 300)
+  
+  write.csv(category_task_summary,
+            file.path(OUTPUT_DIR, "neurocognitive_task_progression_summary.csv"),
+            row.names = FALSE)
+  
+  cat("  ✓ Task progression analysis complete\n\n")
+  
+  return(category_task_summary)
+}
+
+#' Create master summary table of top neurocognitive terms
+create_neurocognitive_summary_table <- function(neurocog_results, top_n = 50) {
+  
+  cat("Creating neurocognitive summary table...\n")
+  
+  summary_table <- neurocog_results %>%
+    group_by(Description, Neurocognitive_Category) %>%
+    summarise(
+      N_Scenarios = n_distinct(Scenario),
+      N_CellTypes = n_distinct(CellType),
+      N_Tasks = n_distinct(Task[Task != "AllTasks"]),
+      Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      Min_pAdj = min(p.adjust, na.rm = TRUE),
+      Scenarios = paste(unique(Scenario), collapse = "; "),
+      CellTypes = paste(unique(CellType), collapse = "; "),
+      Tasks = paste(unique(Task[Task != "AllTasks"]), collapse = "; "),
+      .groups = 'drop'
+    ) %>%
+    arrange(desc(N_Scenarios), Mean_pAdj) %>%
+    head(top_n)
+  
+  write.csv(summary_table,
+            file.path(OUTPUT_DIR, "top_neurocognitive_terms_summary.csv"),
+            row.names = FALSE)
+  
+  cat("  ✓ Created summary table with top", nrow(summary_table), "terms\n\n")
+  
+  return(summary_table)
+}
+
+#' Compare neurocognitive categories: Strong vs Basic
+compare_categories_strong_vs_basic <- function(neurocog_results) {
+  
+  cat("Comparing neurocognitive categories: Strong vs Basic rescue...\n")
+  
+  category_comparison <- neurocog_results %>%
+    separate_rows(Neurocognitive_Category, sep = ";") %>%
+    mutate(Rescue_Type = ifelse(grepl("strong", Scenario), "Strong", "Basic")) %>%
+    group_by(Neurocognitive_Category, Rescue_Type) %>%
+    summarise(
+      N_Terms = n_distinct(Description),
+      Mean_pAdj = mean(p.adjust, na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    pivot_wider(names_from = Rescue_Type, 
+                values_from = c(N_Terms, Mean_pAdj),
+                values_fill = list(N_Terms = 0, Mean_pAdj = 1))
+  
+  # Calculate enrichment ratio
+  category_comparison <- category_comparison %>%
+    mutate(
+      Strong_to_Basic_Ratio = N_Terms_Strong / pmax(N_Terms_Basic, 1),
+      Dominant_Rescue = case_when(
+        Strong_to_Basic_Ratio > 1.2 ~ "Strong-Dominant",
+        Strong_to_Basic_Ratio < 0.8 ~ "Basic-Dominant",
+        TRUE ~ "Balanced"
+      )
+    )
+  
+  write.csv(category_comparison,
+            file.path(OUTPUT_DIR, "neurocognitive_categories_strong_vs_basic.csv"),
+            row.names = FALSE)
+  
+  # Visualize
+  comparison_long <- category_comparison %>%
+    dplyr::select(Neurocognitive_Category, N_Terms_Strong, N_Terms_Basic) %>%
+    pivot_longer(cols = starts_with("N_Terms"),
+                 names_to = "Rescue_Type",
+                 values_to = "N_Terms") %>%
+    mutate(Rescue_Type = gsub("N_Terms_", "", Rescue_Type))
+  
+  p <- ggplot(comparison_long, 
+              aes(x = reorder(Neurocognitive_Category, N_Terms), 
+                  y = N_Terms, 
+                  fill = Rescue_Type)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    coord_flip() +
+    scale_fill_viridis_d(option = VIRIDIS_PALETTE, begin = 0.3, end = 0.9) +
+    labs(title = "Neurocognitive Pathway Enrichment: Strong vs Basic Rescue",
+         subtitle = "Which rescue mechanism affects which cognitive processes?",
+         x = "Neurocognitive Category",
+         y = "Number of Enriched Terms",
+         fill = "Rescue Type") +
+    theme_minimal() +
+    theme(legend.position = "bottom")
+  
+  ggsave(file.path(OUTPUT_DIR, "neurocognitive_strong_vs_basic_comparison.pdf"), 
+         p, width = 12, height = 8, dpi = 300)
+  
+  cat("  ✓ Category comparison complete\n\n")
+  
+  return(category_comparison)
+}
+
+#' Cell type × neurocognitive category matrix
+create_celltype_category_matrix <- function(neurocog_results) {
+  
+  cat("Creating Cell Type × Neurocognitive Category matrix...\n")
+  
+  matrix_data <- neurocog_results %>%
+    separate_rows(Neurocognitive_Category, sep = ";") %>%
+    group_by(CellType, Neurocognitive_Category) %>%
+    summarise(
+      N_Terms = n_distinct(Description),
+      Mean_NegLog10P = mean(-log10(p.adjust), na.rm = TRUE),
+      .groups = 'drop'
+    )
+  
+  # Create matrix for heatmap
+  heatmap_matrix <- matrix_data %>%
+    dplyr::select(CellType, Neurocognitive_Category, Mean_NegLog10P) %>%
+    pivot_wider(names_from = CellType, 
+                values_from = Mean_NegLog10P,
+                values_fill = 0) %>%
+    column_to_rownames("Neurocognitive_Category") %>%
+    as.matrix()
+  
+  # Create heatmap
+  col_fun <- colorRamp2(seq(0, max(heatmap_matrix), length.out = 5), 
+                       viridis(5, option = VIRIDIS_PALETTE))
+  
+  pdf(file.path(OUTPUT_DIR, "celltype_x_neurocognitive_category.pdf"), 
+      width = 12, height = 10)
+  
+  ht <- Heatmap(heatmap_matrix,
+                name = "Mean\n-log10(p.adj)",
+                col = col_fun,
+                cluster_rows = TRUE,
+                cluster_columns = TRUE,
+                show_row_names = TRUE,
+                show_column_names = TRUE,
+                row_names_gp = gpar(fontsize = 11),
+                column_names_gp = gpar(fontsize = 11),
+                column_title = "Neurocognitive Function Enrichment by Cell Type",
+                row_title = "Neurocognitive Category",
+                heatmap_legend_param = list(
+                  title = "Mean -log10(p.adjust)",
+                  direction = "vertical"
+                ))
+  
+  draw(ht)
+  dev.off()
+  
+  write.csv(matrix_data,
+            file.path(OUTPUT_DIR, "celltype_x_category_data.csv"),
+            row.names = FALSE)
+  
+  cat("  ✓ Cell Type × Category matrix complete\n\n")
+  
+  return(matrix_data)
+}
+
+# ====================================================================
+# DATA LOADING
+# ====================================================================
+
+# OPTION 1: If you already ran the original comparison analysis script
+# and have 'go_results' loaded in your R environment, you can skip this section
+# and go directly to filtering
+
+# OPTION 2: If starting fresh, load the data using the function from your
+# original Advanced_Comparison_Analysis_FIXED.R script:
+# source("Advanced_Comparison_Analysis_FIXED.R")  # Run up to line 638 to load go_results
+# OR copy-paste the load_all_go_bp_results() function here and run:
+# go_results <- load_all_go_bp_results()
+
+# Verify data is loaded
+if (!exists("go_results")) {
+  stop("Error: go_results not found. Please load your GO enrichment data first.\n",
+       "Run the original comparison analysis script or load data manually.")
+}
+
+cat("GO results loaded:", nrow(go_results), "terms\n")
+cat("Columns:", paste(colnames(go_results), collapse = ", "), "\n\n")
+
+# ====================================================================
+# MAIN EXECUTION
+# ====================================================================
+
+cat("========================================\n")
+cat("STARTING NEUROCOGNITIVE-FOCUSED ANALYSIS\n")
+cat("========================================\n\n")
+
+# Filter for neurocognitive terms
+neurocog_results <- filter_neurocognitive_terms(go_results)
+
+# Save filtered results
+write.csv(neurocog_results,
+          file.path(OUTPUT_DIR, "all_neurocognitive_terms.csv"),
+          row.names = FALSE)
+
+# Create analyses
+cat("Running neurocognitive-focused analyses...\n\n")
+
+# 1. Category-specific heatmaps
+create_category_heatmaps(neurocog_results, top_n = 15)
+
+# 2. Task progression by category
+if ("Task" %in% colnames(neurocog_results)) {
+  task_prog <- analyze_neurocognitive_task_progression(neurocog_results)
+}
+
+# 3. Summary table
+summary_table <- create_neurocognitive_summary_table(neurocog_results, top_n = 50)
+
+# 4. Strong vs Basic comparison
+category_comparison <- compare_categories_strong_vs_basic(neurocog_results)
+
+# 5. Cell Type × Category matrix
+celltype_category <- create_celltype_category_matrix(neurocog_results)
+
+# ====================================================================
+# FINAL SUMMARY
+# ====================================================================
+
+cat("\n========================================\n")
+cat("NEUROCOGNITIVE-FOCUSED ANALYSIS COMPLETE!\n")
+cat("========================================\n")
+cat("Results saved in:", OUTPUT_DIR, "\n\n")
+
+cat("Files created:\n")
+cat("  1. all_neurocognitive_terms.csv - All filtered terms\n")
+cat("  2. top_neurocognitive_terms_summary.csv - Top 50 terms\n")
+cat("  3. neurocognitive_categories_strong_vs_basic.csv\n")
+cat("  4. celltype_x_category_data.csv\n")
+cat("  5. heatmap_Synaptic.pdf\n")
+cat("  6. heatmap_Neuronal_Development.pdf\n")
+cat("  7. heatmap_Myelination.pdf\n")
+cat("  8. heatmap_Cognitive_Function.pdf\n")
+cat("  9. heatmap_Epigenetic.pdf\n")
+cat(" 10. neurocognitive_strong_vs_basic_comparison.pdf\n")
+cat(" 11. celltype_x_neurocognitive_category.pdf\n")
+if ("Task" %in% colnames(neurocog_results)) {
+  cat(" 12. neurocognitive_task_progression.pdf\n")
+  cat(" 13. neurocognitive_task_progression_summary.csv\n")
+}
+
+cat("\n========================================\n")
+cat("Key Features:\n")
+cat("  ✓ Filtered for", nrow(neurocog_results), "neurocognitive-relevant terms\n")
+cat("  ✓ Organized by 8 functional categories\n")
+cat("  ✓ Category-specific heatmaps created\n")
+cat("  ✓ Strong vs Basic rescue comparison\n")
+cat("  ✓ Cell Type × Category enrichment matrix\n")
+if ("Task" %in% colnames(neurocog_results)) {
+  cat("  ✓ Task progression analysis\n")
+}
+cat("========================================\n")
