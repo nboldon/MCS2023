@@ -1,0 +1,113 @@
+suppressPackageStartupMessages({
+  library(clusterProfiler)
+  library(org.Mm.eg.db)
+  library(biomaRt)
+  library(dplyr)
+  library(ggplot2)
+  library(forcats)
+  library(viridis)
+  library(enrichplot)
+})
+
+# ================================
+# Directories and Input Data
+# ================================
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior/rescue_behavior_correlations_strong_FDR-0-05_TASK_SPECIFIC")
+input_file <- "all_celltypes_significant_correlations.csv"
+output_dir <- "Enrichment_RescueBehavior_StrongFDR0.05_TaskSpecific_ByTask"
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+# ================================
+# Read and clean gene list
+# ================================
+genes_df <- read.csv(input_file, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE)
+
+# Remove quotes from column names (optional but safer)
+colnames(genes_df) <- gsub('"', '', colnames(genes_df))
+
+# Remove quotes from gene symbols
+genes_df$Gene <- gsub('"', '', genes_df$Gene)
+genes_df$Gene <- trimws(genes_df$Gene)  # remove extra spaces
+
+# Check
+head(genes_df)
+cat("Total unique genes found:", length(unique(genes_df$Gene)), "\n")
+
+
+# ================================
+# Loop through each task
+# ================================
+# ================================
+# Task-specific loop
+# ================================
+tasks <- unique(genes_df$Task)
+
+for (task in tasks) {
+  
+  task_dir <- file.path(output_dir, task)
+  dir.create(task_dir, showWarnings = FALSE, recursive = TRUE)
+  
+  task_genes <- genes_df %>% filter(Task == task)
+  gene_symbols <- unique(task_genes$Gene)
+  
+  # Map gene symbols
+  mapped_orgdb <- suppressMessages(
+    bitr(gene_symbols, fromType="SYMBOL", toType="ENTREZID", OrgDb=org.Mm.eg.db)
+  )
+  
+  if (nrow(mapped_orgdb) == 0) {
+    # fallback biomaRt
+    ensembl <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
+    mapped_biomart <- getBM(
+      attributes = c("external_gene_name", "entrezgene_id"),
+      filters = "external_gene_name",
+      values = gene_symbols,
+      mart = ensembl
+    )
+    colnames(mapped_biomart) <- c("SYMBOL", "ENTREZID")
+    mapped_biomart <- mapped_biomart[!is.na(mapped_biomart$ENTREZID), ]
+    mapped_genes <- mapped_biomart
+  } else {
+    mapped_genes <- mapped_orgdb
+  }
+  
+  gene_ids <- unique(mapped_genes$ENTREZID)
+  if (length(gene_ids) == 0) {
+    cat("No genes mapped for task", task, "\n")
+    next
+  }
+  
+  # ================================
+  # GO Enrichment
+  # ================================
+  go_bp <- enrichGO(
+    gene         = gene_ids,
+    OrgDb        = org.Mm.eg.db,
+    keyType      = "ENTREZID",
+    ont          = "BP",
+    pAdjustMethod= "BH",
+    pvalueCutoff = 0.05,
+    qvalueCutoff = 0.05,
+    readable     = TRUE
+  )
+  
+  # Save results to CSV
+  if (!is.null(go_bp) && nrow(as.data.frame(go_bp)) > 0) {
+    go_file <- file.path(task_dir, paste0("GO_BP_", task, "_strongFDR0.05.csv"))
+    write.csv(as.data.frame(go_bp), go_file, row.names = FALSE)
+  }
+  
+  # ================================
+  # KEGG Enrichment (optional)
+  # ================================
+  kegg <- enrichKEGG(
+    gene         = gene_ids,
+    organism     = "mmu",
+    pvalueCutoff = 0.05
+  )
+  
+  if (!is.null(kegg) && nrow(as.data.frame(kegg)) > 0) {
+    kegg_file <- file.path(task_dir, paste0("KEGG_", task, "_strongFDR0.05.csv"))
+    write.csv(as.data.frame(kegg), kegg_file, row.names = FALSE)
+  }
+}
