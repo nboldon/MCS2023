@@ -1,0 +1,378 @@
+# ===============================================================
+# GO/KEGG Enrichment on Clustered Genes 
+# ===============================================================
+
+library(dplyr)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(ggplot2)
+library(viridis)
+library(pheatmap)
+library(tidyr)
+library(forcats)
+
+setwd("/Volumes/DataBox/Final_Analysis_Convergence")
+
+# ===============================================================
+# LOAD & FILTER GENE LIST
+# ===============================================================
+
+gene_data <- read.csv("convergent_genes_relaxed_phase2.csv", stringsAsFactors = FALSE)
+
+# Ensure is_cluster column is logical
+if ("is_cluster" %in% names(gene_data)) {
+  gene_data$is_cluster <- tolower(trimws(as.character(gene_data$is_cluster))) %in% c("true", "t", "1")
+} else if ("is.cluster" %in% names(gene_data)) {
+  gene_data$is_cluster <- tolower(trimws(as.character(gene_data$is.cluster))) %in% c("true", "t", "1")
+} else {
+  stop("❌ No is_cluster or is.cluster column found in the file.")
+}
+
+# Filter to clustered genes
+cluster_genes_data <- gene_data %>% filter(is_cluster == TRUE)
+cat("✅ Found", nrow(cluster_genes_data), "rows with is_cluster == TRUE\n")
+# Found 1096 rows with is_cluster == TRUE
+
+# ===============================================================
+# CREATE METADATA SUMMARY
+# ===============================================================
+
+meta_summary <- cluster_genes_data %>%
+  group_by(name) %>%
+  summarise(
+    comparisons = paste(unique(comparison), collapse = "; "),
+    cell_types = paste(unique(cell_type), collapse = "; "),
+    clusters = paste(unique(cluster_or_celltype), collapse = "; "),
+    .groups = "drop"
+  )
+
+# ===============================================================
+# MAP SYMBOLS TO ENTREZ IDs AND ADD METADATA
+# ===============================================================
+
+gene_mapping <- bitr(cluster_genes_data$name,
+                     fromType = "SYMBOL",
+                     toType = "ENTREZID",
+                     OrgDb = org.Mm.eg.db) %>%
+  left_join(meta_summary, by = c("SYMBOL" = "name"))
+
+cat("✅ Converted", nrow(gene_mapping), "genes to ENTREZ IDs with metadata\n")
+# Converted 99 genes to ENTREZ IDs with metadata
+
+# ===============================================================
+# RUN GO & KEGG ENRICHMENT
+# ===============================================================
+
+go_bp <- enrichGO(
+  gene = gene_mapping$ENTREZID,
+  OrgDb = org.Mm.eg.db,
+  ont = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05,
+  readable = TRUE
+)
+
+kegg <- enrichKEGG(
+  gene = gene_mapping$ENTREZID,
+  organism = 'mmu',
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05
+)
+
+if (!is.null(kegg) && nrow(kegg@result) > 0) {
+  kegg <- setReadable(kegg, OrgDb = org.Mm.eg.db, keyType = "ENTREZID")
+}
+
+# ===============================================================
+# FUNCTION TO ADD METADATA AND SYMBOLS (FIXED)
+# ===============================================================
+
+add_metadata_to_enrich <- function(enrich_result, gene_mapping) {
+  if (is.null(enrich_result) || nrow(enrich_result@result) == 0) return(enrich_result)
+  
+  # Map term ID to gene ENTREZIDs
+  term_gene_df <- do.call(rbind, lapply(names(enrich_result@geneSets), function(term_id) {
+    data.frame(
+      ID = term_id,
+      ENTREZID = enrich_result@geneSets[[term_id]],
+      stringsAsFactors = FALSE
+    )
+  }))
+  
+  # Merge SYMBOLs + metadata
+  term_gene_df <- term_gene_df %>%
+    left_join(gene_mapping, by = "ENTREZID")
+  
+  # Merge Description, Count, p.adjust from original enrich_result
+  term_info <- enrich_result@result %>%
+    dplyr::select(ID, Description, Count, p.adjust)
+  
+  term_gene_df <- term_gene_df %>%
+    left_join(term_info, by = "ID")
+  
+  # Collapse per term
+  enrich_long <- term_gene_df %>%
+    group_by(ID, Description) %>%
+    summarise(
+      Count = unique(Count),
+      p.adjust = unique(p.adjust),
+      comparisons = paste(unique(na.omit(comparisons)), collapse = "; "),
+      cell_types = paste(unique(na.omit(cell_types)), collapse = "; "),
+      clusters = paste(unique(na.omit(clusters)), collapse = "; "),
+      genes = paste(unique(SYMBOL), collapse = "; "),
+      .groups = "drop"
+    )
+  
+  enrich_result@result <- enrich_long
+  return(enrich_result)
+}
+
+go_bp <- add_metadata_to_enrich(go_bp, gene_mapping)
+kegg  <- add_metadata_to_enrich(kegg, gene_mapping)
+
+# ===============================================================
+# EXPORT RESULTS
+# ===============================================================
+
+if (!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  write.csv(as.data.frame(go_bp@result), "GO_BP_clustered_genes_with_metadata.csv", row.names = FALSE)
+  cat("✅ GO results exported\n")
+}
+
+if (!is.null(kegg) && nrow(kegg@result) > 0) {
+  write.csv(as.data.frame(kegg@result), "KEGG_clustered_genes_with_metadata.csv", row.names = FALSE)
+  cat("✅ KEGG results exported\n")
+}
+
+# ===============================================================
+# OPTIONAL: VISUALIZATION
+# ===============================================================
+
+theme_custom <- theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    axis.text.y = element_text(size = 9),
+    axis.text.x = element_text(size = 10)
+  )
+
+# GO Dotplot
+if (!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  df_plot <- as.data.frame(go_bp@result) %>%
+    filter(!is.na(Description)) %>%
+    mutate(
+      Description = fct_reorder(Description, p.adjust),
+      GeneRatio = sapply(strsplit(genes, ";"), length) / nrow(cluster_genes_data)
+    )
+  
+  p1 <- ggplot(df_plot[1:min(20,nrow(df_plot)), ],
+               aes(x = GeneRatio, y = Description, size = Count, color = p.adjust)) +
+    geom_point() +
+    scale_color_viridis(option = "D", direction = -1, name = "Adjusted p-value") +
+    theme_custom +
+    ggtitle("GO Biological Process (Clustered Genes)") +
+    labs(x = "Gene Ratio", y = NULL)
+  
+  ggsave("GO_BP_clustered_dotplot_viridis.pdf", p1, width = 10, height = 8)
+}
+
+# KEGG dotplot
+if (!is.null(kegg) && nrow(kegg@result) > 0) {
+  df_plot <- as.data.frame(kegg@result) %>%
+    filter(!is.na(Description)) %>%
+    mutate(
+      Description = fct_reorder(Description, p.adjust),
+      GeneRatio = sapply(strsplit(genes, ";"), length) / nrow(cluster_genes_data)
+    )
+  
+  p2 <- ggplot(df_plot[1:min(20,nrow(df_plot)), ],
+               aes(x = GeneRatio, y = Description, size = Count, color = p.adjust)) +
+    geom_point() +
+    scale_color_viridis(option = "C", direction = -1, name = "Adjusted p-value") +
+    theme_custom +
+    ggtitle("KEGG Pathways (Clustered Genes)") +
+    labs(x = "Gene Ratio", y = NULL)
+  
+  ggsave("KEGG_clustered_dotplot_viridis.pdf", p2, width = 10, height = 8)
+}
+
+
+# ===============================================================
+# HEATMAP OF TOP 20 GO TERMS BY CELL TYPE
+# ===============================================================
+
+if (!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  top_go <- head(go_bp@result, 20)
+  
+  go_matrix <- top_go %>%
+    filter(!is.na(Description)) %>%
+    dplyr::select(Description, clusters, cell_types) %>%
+    separate_rows(cell_types, sep = ";\\s*") %>%
+    group_by(Description, cell_types) %>%
+    summarise(GeneCount = n(), .groups = "drop") %>%
+    pivot_wider(names_from = cell_types, values_from = GeneCount, values_fill = 0)
+  
+  go_mat <- as.data.frame(go_matrix)
+  rownames(go_mat) <- go_mat$Description
+  go_mat <- go_mat[, -1, drop = FALSE]
+  
+  pheatmap(go_mat,
+           color = viridis(100),
+           cluster_rows = TRUE,
+           cluster_cols = TRUE,
+           main = "Top 20 GO Terms by Cell Type (Clustered Genes)",
+           fontsize_row = 8,
+           border_color = NA,
+           filename = "GO_BP_clustered_heatmap_viridis.pdf",
+           width = 10, height = 8)
+}
+
+
+
+##################################
+
+# ============================
+# Cell type mapping
+# ============================
+cluster_to_celltype <- c(
+  "1"="astrocyte precursors", "2"="oligodendrocytes", "3"="oligodendrocytes",
+  "4"="glutamatergic-oligodendrocytes", "5"="oligodendrocyte precursors",
+  "6"="oligodendrocyte precursors", "7"="astrocyte precursors", "8"="astrocytes",
+  "9"="astrocyte precursors", "10"="microglia", "11"="microglia",
+  "12"="endothelial-vascular", "13"="endothelial-vascular", "14"="endothelial-vascular",
+  "15"="glutamatergic precursors", "16"="glutamatergic precursors", "17"="glutamatergic precursors",
+  "18"="Glutamatergic neurons", "19"="Glutamatergic neurons", "20"="glutamatergic precursors",
+  "21"="Glutamatergic neurons", "22"="GABAergic neurons", "23"="GABAergic neurons",
+  "24"="glutamatergic-astrocytes", "25"="glutamatergic precursors"
+)
+
+# ============================
+# Generate dotplots per cell type
+# ============================
+library(ggplot2)
+library(forcats)
+library(viridis)
+
+# GO per cell type
+if (!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  unique_cell_types <- unique(unlist(strsplit(paste(go_bp@result$cell_types, collapse=";"), ";\\s*")))
+  
+  for (ct in unique_cell_types) {
+    df_plot <- as.data.frame(go_bp@result) %>%
+      filter(grepl(ct, cell_types)) %>%        # keep only terms for this cell type
+      filter(!is.na(Description)) %>%
+      mutate(
+        Description = fct_reorder(Description, p.adjust),
+        GeneRatio = sapply(strsplit(genes, ";"), length) / nrow(cluster_genes_data)
+      )
+    
+    if (nrow(df_plot) == 0) next
+    
+    p <- ggplot(df_plot[1:min(20,nrow(df_plot)), ], 
+                aes(x = GeneRatio, y = Description, size = Count, color = p.adjust)) +
+      geom_point() +
+      scale_color_viridis(option = "D", direction = -1, name = "Adjusted p-value") +
+      theme_minimal(base_size=14) +
+      theme(plot.title = element_text(face="bold", hjust=0.5),
+            axis.text.y = element_text(size=9),
+            axis.text.x = element_text(size=10)) +
+      ggtitle(paste0("GO BP - ", ct)) +
+      labs(x="Gene Ratio", y=NULL)
+    
+    ggsave(paste0("GO_BP_dotplot_", gsub(" ", "_", ct), ".pdf"), p, width=10, height=8)
+  }
+}
+
+# KEGG per cell type (same logic)
+if (!is.null(kegg) && nrow(kegg@result) > 0) {
+  unique_cell_types <- unique(unlist(strsplit(paste(kegg@result$cell_types, collapse=";"), ";\\s*")))
+  
+  for (ct in unique_cell_types) {
+    df_plot <- as.data.frame(kegg@result) %>%
+      filter(grepl(ct, cell_types)) %>%
+      filter(!is.na(Description)) %>%
+      mutate(
+        Description = fct_reorder(Description, p.adjust),
+        GeneRatio = sapply(strsplit(genes, ";"), length) / nrow(cluster_genes_data)
+      )
+    
+    if (nrow(df_plot) == 0) next
+    
+    p <- ggplot(df_plot[1:min(20,nrow(df_plot)), ], 
+                aes(x = GeneRatio, y = Description, size = Count, color = p.adjust)) +
+      geom_point() +
+      scale_color_viridis(option = "C", direction = -1, name = "Adjusted p-value") +
+      theme_minimal(base_size=14) +
+      theme(plot.title = element_text(face="bold", hjust=0.5),
+            axis.text.y = element_text(size=9),
+            axis.text.x = element_text(size=10)) +
+      ggtitle(paste0("KEGG Pathways - ", ct)) +
+      labs(x="Gene Ratio", y=NULL)
+    
+    ggsave(paste0("KEGG_dotplot_", gsub(" ", "_", ct), ".pdf"), p, width=10, height=8)
+  }
+}
+
+################################
+
+# ================================
+# Generate dotplots per cell type and comparison
+# ================================
+
+# Function to create dotplots for a given dataset (GO or KEGG)
+plot_enrichment_by_celltype_and_comparison <- function(enrich_df, enrich_type="GO") {
+  
+  unique_cell_types <- unique(unlist(strsplit(paste(enrich_df$cell_types, collapse=";"), ";\\s*")))
+  unique_comparisons <- unique(unlist(strsplit(paste(enrich_df$comparisons, collapse=";"), ";\\s*")))
+  
+  for (ct in unique_cell_types) {
+    for (cmp in unique_comparisons) {
+      
+      df_plot <- enrich_df %>%
+        filter(grepl(ct, cell_types)) %>%
+        filter(grepl(cmp, comparisons)) %>%
+        filter(!is.na(Description)) %>%
+        mutate(
+          Description = forcats::fct_reorder(Description, p.adjust),
+          genes = ifelse(is.na(genes), "", genes),    # fix NA
+          GeneRatio = sapply(strsplit(genes, ";"), function(x) length(x)) / nrow(cluster_genes_data)
+        )
+      
+      if (nrow(df_plot) == 0) next
+      
+      p <- ggplot(df_plot[1:min(20, nrow(df_plot)), ],
+                  aes(x = GeneRatio, y = Description, size = Count, color = p.adjust)) +
+        geom_point() +
+        scale_color_viridis(option = ifelse(enrich_type=="GO","D","C"), direction=-1, name="Adjusted p-value") +
+        theme_minimal(base_size=14) +
+        theme(plot.title = element_text(face="bold", hjust=0.5),
+              axis.text.y = element_text(size=9),
+              axis.text.x = element_text(size=10)) +
+        ggtitle(paste0(enrich_type, " - ", ct, " - ", cmp)) +
+        labs(x="Gene Ratio", y=NULL)
+      
+      fname <- paste0(enrich_type, "_dotplot_", gsub(" ", "_", ct), "_", gsub(">", "_vs_", cmp), ".pdf")
+      ggsave(fname, p, width=10, height=8)
+    }
+  }
+}
+
+
+# ================================
+# Apply for GO
+# ================================
+if (!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  plot_enrichment_by_celltype_and_comparison(as.data.frame(go_bp@result), enrich_type="GO")
+}
+
+# ================================
+# Apply for KEGG
+# ================================
+if (!is.null(kegg) && nrow(kegg@result) > 0) {
+  plot_enrichment_by_celltype_and_comparison(as.data.frame(kegg@result), enrich_type="KEGG")
+}
+
+#########################
+
+
