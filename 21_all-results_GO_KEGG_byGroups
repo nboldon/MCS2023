@@ -1,0 +1,557 @@
+# ====================================================================
+# GO/KEGG ENRICHMENT ANALYSIS FOR CORRELATION-DERIVED GENES
+# Runs enrichment by Task × CellType × ResponseType × FunctionalCategory
+# ====================================================================
+
+library(tidyverse)
+library(clusterProfiler)
+library(org.Mm.eg.db)  # Mouse annotation - change if using different organism
+library(enrichplot)
+library(ggplot2)
+library(viridis)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+# Which analysis to process (choose one or process all)
+ANALYSIS_DIRS <- c(
+  "rescue_behavior_correlations_basic_FDR-0-05_TASK_SPECIFIC",
+  "rescue_behavior_correlations_basic_FDR-0-1_TASK_SPECIFIC",
+  "rescue_behavior_correlations_strong_FDR-0-05_TASK_SPECIFIC",
+  "rescue_behavior_correlations_strong_FDR-0-1_TASK_SPECIFIC"
+)
+
+# Organism database - CHANGE THIS if not using mouse!
+# For human: org.Hs.eg.db
+# For rat: org.Rn.eg.db
+ORGANISM_DB <- org.Mm.eg.db
+ORGANISM <- "mouse"
+KEGG_ORGANISM <- "mmu"  # mmu = mouse, hsa = human, rno = rat
+
+# Enrichment parameters
+GO_PVALUE_CUTOFF <- 0.05
+GO_QVALUE_CUTOFF <- 0.2
+KEGG_PVALUE_CUTOFF <- 0.05
+KEGG_QVALUE_CUTOFF <- 0.2
+MIN_GENES_FOR_ENRICHMENT <- 5  # Minimum genes needed to run enrichment
+
+# Which groupings to run (set to TRUE/FALSE)
+RUN_BY_TASK <- TRUE
+RUN_BY_CELLTYPE <- TRUE
+RUN_BY_RESPONSE <- TRUE
+RUN_BY_FUNCTIONAL_CATEGORY <- TRUE  # Enhancing vs Impairing
+
+cat("========================================\n")
+cat("GO/KEGG ENRICHMENT ANALYSIS\n")
+cat("========================================\n")
+cat("Organism:", ORGANISM, "\n")
+cat("GO p-value cutoff:", GO_PVALUE_CUTOFF, "\n")
+cat("GO q-value cutoff:", GO_QVALUE_CUTOFF, "\n")
+cat("KEGG p-value cutoff:", KEGG_PVALUE_CUTOFF, "\n")
+cat("KEGG q-value cutoff:", KEGG_QVALUE_CUTOFF, "\n")
+cat("Minimum genes:", MIN_GENES_FOR_ENRICHMENT, "\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# UTILITY FUNCTIONS
+# ====================================================================
+
+#' Convert gene symbols to Entrez IDs
+convert_to_entrez <- function(gene_symbols, organism_db = ORGANISM_DB) {
+  
+  # Try to convert gene symbols to Entrez IDs
+  entrez_ids <- tryCatch({
+    mapIds(organism_db, 
+           keys = gene_symbols,
+           column = "ENTREZID",
+           keytype = "SYMBOL",
+           multiVals = "first")
+  }, error = function(e) {
+    # If SYMBOL doesn't work, try ALIAS
+    mapIds(organism_db, 
+           keys = gene_symbols,
+           column = "ENTREZID",
+           keytype = "ALIAS",
+           multiVals = "first")
+  })
+  
+  # Remove NAs
+  entrez_ids <- entrez_ids[!is.na(entrez_ids)]
+  
+  conversion_rate <- length(entrez_ids) / length(gene_symbols) * 100
+  cat(sprintf("    Converted %d/%d genes (%.1f%%)\n", 
+              length(entrez_ids), length(gene_symbols), conversion_rate))
+  
+  return(entrez_ids)
+}
+
+#' Run GO enrichment
+run_go_enrichment <- function(entrez_ids, group_name, ont = "BP") {
+  
+  if (length(entrez_ids) < MIN_GENES_FOR_ENRICHMENT) {
+    cat(sprintf("    Skipping %s GO-%s: only %d genes (need >=%d)\n", 
+                group_name, ont, length(entrez_ids), MIN_GENES_FOR_ENRICHMENT))
+    return(NULL)
+  }
+  
+  cat(sprintf("    Running GO-%s enrichment for %s (%d genes)...\n", 
+              ont, group_name, length(entrez_ids)))
+  
+  go_result <- tryCatch({
+    enrichGO(gene = entrez_ids,
+             OrgDb = ORGANISM_DB,
+             ont = ont,
+             pAdjustMethod = "BH",
+             pvalueCutoff = GO_PVALUE_CUTOFF,
+             qvalueCutoff = GO_QVALUE_CUTOFF,
+             readable = TRUE)
+  }, error = function(e) {
+    cat("      ERROR in GO enrichment:", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (!is.null(go_result) && nrow(as.data.frame(go_result)) > 0) {
+    cat(sprintf("      Found %d significant terms\n", nrow(as.data.frame(go_result))))
+    return(go_result)
+  } else {
+    cat("      No significant terms found\n")
+    return(NULL)
+  }
+}
+
+#' Run KEGG enrichment
+run_kegg_enrichment <- function(entrez_ids, group_name) {
+  
+  if (length(entrez_ids) < MIN_GENES_FOR_ENRICHMENT) {
+    cat(sprintf("    Skipping KEGG for %s: only %d genes (need >=%d)\n", 
+                group_name, length(entrez_ids), MIN_GENES_FOR_ENRICHMENT))
+    return(NULL)
+  }
+  
+  cat(sprintf("    Running KEGG enrichment for %s (%d genes)...\n", 
+              group_name, length(entrez_ids)))
+  
+  kegg_result <- tryCatch({
+    enrichKEGG(gene = entrez_ids,
+               organism = KEGG_ORGANISM,
+               pAdjustMethod = "BH",
+               pvalueCutoff = KEGG_PVALUE_CUTOFF,
+               qvalueCutoff = KEGG_QVALUE_CUTOFF)
+  }, error = function(e) {
+    cat("      ERROR in KEGG enrichment:", e$message, "\n")
+    return(NULL)
+  })
+  
+  if (!is.null(kegg_result) && nrow(as.data.frame(kegg_result)) > 0) {
+    # Add gene symbols
+    kegg_result <- setReadable(kegg_result, OrgDb = ORGANISM_DB, keyType = "ENTREZID")
+    cat(sprintf("      Found %d significant pathways\n", nrow(as.data.frame(kegg_result))))
+    return(kegg_result)
+  } else {
+    cat("      No significant pathways found\n")
+    return(NULL)
+  }
+}
+
+#' Save enrichment results
+save_enrichment_results <- function(result, output_file, type = "GO") {
+  if (is.null(result) || nrow(as.data.frame(result)) == 0) {
+    return(FALSE)
+  }
+  
+  result_df <- as.data.frame(result)
+  write.csv(result_df, output_file, row.names = FALSE)
+  return(TRUE)
+}
+
+# ====================================================================
+# MAIN ENRICHMENT FUNCTION
+# ====================================================================
+
+run_enrichment_analysis <- function(analysis_dir) {
+  
+  cat("\n")
+  cat("========================================\n")
+  cat("PROCESSING:", analysis_dir, "\n")
+  cat("========================================\n\n")
+  
+  # Load categorized correlations
+  input_file <- file.path(analysis_dir, "Correlation_Interpretations", 
+                          "categorized_correlations.csv")
+  
+  if (!file.exists(input_file)) {
+    cat("ERROR: Categorized correlations not found at:", input_file, "\n")
+    cat("Please run the interpretation script first.\n")
+    return(NULL)
+  }
+  
+  correlations <- read.csv(input_file, stringsAsFactors = FALSE)
+  cat("Loaded", nrow(correlations), "categorized correlations\n\n")
+  
+  # Create output directory
+  output_dir <- file.path(analysis_dir, "GO_KEGG_Enrichment_Results")
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+  }
+  
+  # Track all results
+  all_results <- list()
+  
+  # ====================================================================
+  # 1. ENRICHMENT BY FUNCTIONAL CATEGORY (Enhancing vs Impairing)
+  # ====================================================================
+  
+  if (RUN_BY_FUNCTIONAL_CATEGORY) {
+    cat("------------------------------------------------------------------------\n")
+    cat("ENRICHMENT BY FUNCTIONAL CATEGORY (Enhancing vs Impairing)\n")
+    cat("------------------------------------------------------------------------\n\n")
+    
+    func_dir <- file.path(output_dir, "By_Functional_Category")
+    if (!dir.exists(func_dir)) dir.create(func_dir, recursive = TRUE)
+    
+    for (func_cat in unique(correlations$Functional_Category)) {
+      
+      cat("  Processing:", func_cat, "\n")
+      
+      genes <- correlations %>%
+        filter(Functional_Category == func_cat) %>%
+        pull(Gene) %>%
+        unique()
+      
+      cat(sprintf("    %d unique genes\n", length(genes)))
+      
+      if (length(genes) < MIN_GENES_FOR_ENRICHMENT) {
+        cat("    Skipping - too few genes\n\n")
+        next
+      }
+      
+      entrez_ids <- convert_to_entrez(genes)
+      
+      if (length(entrez_ids) >= MIN_GENES_FOR_ENRICHMENT) {
+        
+        # GO Biological Process
+        go_bp <- run_go_enrichment(entrez_ids, func_cat, ont = "BP")
+        if (!is.null(go_bp)) {
+          save_enrichment_results(go_bp, 
+                                  file.path(func_dir, paste0(func_cat, "_GO_BP.csv")))
+          all_results[[paste(func_cat, "GO_BP", sep = "_")]] <- as.data.frame(go_bp)
+        }
+        
+        # GO Molecular Function
+        go_mf <- run_go_enrichment(entrez_ids, func_cat, ont = "MF")
+        if (!is.null(go_mf)) {
+          save_enrichment_results(go_mf, 
+                                  file.path(func_dir, paste0(func_cat, "_GO_MF.csv")))
+          all_results[[paste(func_cat, "GO_MF", sep = "_")]] <- as.data.frame(go_mf)
+        }
+        
+        # GO Cellular Component
+        go_cc <- run_go_enrichment(entrez_ids, func_cat, ont = "CC")
+        if (!is.null(go_cc)) {
+          save_enrichment_results(go_cc, 
+                                  file.path(func_dir, paste0(func_cat, "_GO_CC.csv")))
+          all_results[[paste(func_cat, "GO_CC", sep = "_")]] <- as.data.frame(go_cc)
+        }
+        
+        # KEGG
+        kegg <- run_kegg_enrichment(entrez_ids, func_cat)
+        if (!is.null(kegg)) {
+          save_enrichment_results(kegg, 
+                                  file.path(func_dir, paste0(func_cat, "_KEGG.csv")),
+                                  type = "KEGG")
+          all_results[[paste(func_cat, "KEGG", sep = "_")]] <- as.data.frame(kegg)
+        }
+      }
+      
+      cat("\n")
+    }
+  }
+  
+  # ====================================================================
+  # 2. ENRICHMENT BY CELL TYPE
+  # ====================================================================
+  
+  if (RUN_BY_CELLTYPE) {
+    cat("------------------------------------------------------------------------\n")
+    cat("ENRICHMENT BY CELL TYPE\n")
+    cat("------------------------------------------------------------------------\n\n")
+    
+    celltype_dir <- file.path(output_dir, "By_CellType")
+    if (!dir.exists(celltype_dir)) dir.create(celltype_dir, recursive = TRUE)
+    
+    for (cell_type in unique(correlations$CellType)) {
+      
+      cat("  Processing:", cell_type, "\n")
+      
+      # Overall for this cell type
+      genes_all <- correlations %>%
+        filter(CellType == cell_type) %>%
+        pull(Gene) %>%
+        unique()
+      
+      cat(sprintf("    Total: %d genes\n", length(genes_all)))
+      
+      # Split by functional category
+      for (func_cat in c("Performance_Enhancing", "Performance_Impairing")) {
+        
+        genes <- correlations %>%
+          filter(CellType == cell_type, Functional_Category == func_cat) %>%
+          pull(Gene) %>%
+          unique()
+        
+        if (length(genes) < MIN_GENES_FOR_ENRICHMENT) {
+          cat(sprintf("    %s: %d genes (skipping)\n", func_cat, length(genes)))
+          next
+        }
+        
+        cat(sprintf("    %s: %d genes\n", func_cat, length(genes)))
+        
+        entrez_ids <- convert_to_entrez(genes)
+        
+        if (length(entrez_ids) >= MIN_GENES_FOR_ENRICHMENT) {
+          
+          group_name <- paste(cell_type, func_cat, sep = "_")
+          ct_func_dir <- file.path(celltype_dir, cell_type)
+          if (!dir.exists(ct_func_dir)) dir.create(ct_func_dir, recursive = TRUE)
+          
+          # GO BP
+          go_bp <- run_go_enrichment(entrez_ids, group_name, ont = "BP")
+          if (!is.null(go_bp)) {
+            save_enrichment_results(go_bp, 
+                                    file.path(ct_func_dir, paste0(func_cat, "_GO_BP.csv")))
+          }
+          
+          # KEGG
+          kegg <- run_kegg_enrichment(entrez_ids, group_name)
+          if (!is.null(kegg)) {
+            save_enrichment_results(kegg, 
+                                    file.path(ct_func_dir, paste0(func_cat, "_KEGG.csv")),
+                                    type = "KEGG")
+          }
+        }
+      }
+      
+      cat("\n")
+    }
+  }
+  
+  # ====================================================================
+  # 3. ENRICHMENT BY TASK
+  # ====================================================================
+  
+  if (RUN_BY_TASK) {
+    cat("------------------------------------------------------------------------\n")
+    cat("ENRICHMENT BY TASK\n")
+    cat("------------------------------------------------------------------------\n\n")
+    
+    task_dir <- file.path(output_dir, "By_Task")
+    if (!dir.exists(task_dir)) dir.create(task_dir, recursive = TRUE)
+    
+    for (task in unique(correlations$Task)) {
+      
+      cat("  Processing:", task, "\n")
+      
+      for (func_cat in c("Performance_Enhancing", "Performance_Impairing")) {
+        
+        genes <- correlations %>%
+          filter(Task == task, Functional_Category == func_cat) %>%
+          pull(Gene) %>%
+          unique()
+        
+        if (length(genes) < MIN_GENES_FOR_ENRICHMENT) {
+          cat(sprintf("    %s: %d genes (skipping)\n", func_cat, length(genes)))
+          next
+        }
+        
+        cat(sprintf("    %s: %d genes\n", func_cat, length(genes)))
+        
+        entrez_ids <- convert_to_entrez(genes)
+        
+        if (length(entrez_ids) >= MIN_GENES_FOR_ENRICHMENT) {
+          
+          group_name <- paste(task, func_cat, sep = "_")
+          task_func_dir <- file.path(task_dir, task)
+          if (!dir.exists(task_func_dir)) dir.create(task_func_dir, recursive = TRUE)
+          
+          # GO BP
+          go_bp <- run_go_enrichment(entrez_ids, group_name, ont = "BP")
+          if (!is.null(go_bp)) {
+            save_enrichment_results(go_bp, 
+                                    file.path(task_func_dir, paste0(func_cat, "_GO_BP.csv")))
+          }
+          
+          # KEGG
+          kegg <- run_kegg_enrichment(entrez_ids, group_name)
+          if (!is.null(kegg)) {
+            save_enrichment_results(kegg, 
+                                    file.path(task_func_dir, paste0(func_cat, "_KEGG.csv")),
+                                    type = "KEGG")
+          }
+        }
+      }
+      
+      cat("\n")
+    }
+  }
+  
+  # ====================================================================
+  # 4. ENRICHMENT BY RESPONSE TYPE
+  # ====================================================================
+  
+  if (RUN_BY_RESPONSE) {
+    cat("------------------------------------------------------------------------\n")
+    cat("ENRICHMENT BY RESPONSE TYPE\n")
+    cat("------------------------------------------------------------------------\n\n")
+    
+    response_dir <- file.path(output_dir, "By_Response_Type")
+    if (!dir.exists(response_dir)) dir.create(response_dir, recursive = TRUE)
+    
+    for (response in unique(correlations$Response)) {
+      
+      cat("  Processing:", response, "\n")
+      
+      for (func_cat in c("Performance_Enhancing", "Performance_Impairing")) {
+        
+        genes <- correlations %>%
+          filter(Response == response, Functional_Category == func_cat) %>%
+          pull(Gene) %>%
+          unique()
+        
+        if (length(genes) < MIN_GENES_FOR_ENRICHMENT) {
+          cat(sprintf("    %s: %d genes (skipping)\n", func_cat, length(genes)))
+          next
+        }
+        
+        cat(sprintf("    %s: %d genes\n", func_cat, length(genes)))
+        
+        entrez_ids <- convert_to_entrez(genes)
+        
+        if (length(entrez_ids) >= MIN_GENES_FOR_ENRICHMENT) {
+          
+          group_name <- paste(response, func_cat, sep = "_")
+          resp_func_dir <- file.path(response_dir, response)
+          if (!dir.exists(resp_func_dir)) dir.create(resp_func_dir, recursive = TRUE)
+          
+          # GO BP
+          go_bp <- run_go_enrichment(entrez_ids, group_name, ont = "BP")
+          if (!is.null(go_bp)) {
+            save_enrichment_results(go_bp, 
+                                    file.path(resp_func_dir, paste0(func_cat, "_GO_BP.csv")))
+          }
+          
+          # KEGG
+          kegg <- run_kegg_enrichment(entrez_ids, group_name)
+          if (!is.null(kegg)) {
+            save_enrichment_results(kegg, 
+                                    file.path(resp_func_dir, paste0(func_cat, "_KEGG.csv")),
+                                    type = "KEGG")
+          }
+        }
+      }
+      
+      cat("\n")
+    }
+  }
+  
+  # ====================================================================
+  # CREATE SUMMARY
+  # ====================================================================
+  
+  cat("------------------------------------------------------------------------\n")
+  cat("CREATING SUMMARY\n")
+  cat("------------------------------------------------------------------------\n\n")
+  
+  # Count results
+  summary_stats <- data.frame(
+    Analysis = basename(analysis_dir),
+    Total_Correlations = nrow(correlations),
+    Unique_Genes = n_distinct(correlations$Gene),
+    Cell_Types = n_distinct(correlations$CellType),
+    Tasks = n_distinct(correlations$Task),
+    Response_Types = n_distinct(correlations$Response),
+    Enrichment_Results_Generated = length(all_results)
+  )
+  
+  write.csv(summary_stats,
+            file.path(output_dir, "enrichment_summary_stats.csv"),
+            row.names = FALSE)
+  
+  cat("✓ Enrichment analysis complete for:", analysis_dir, "\n")
+  cat("  Results saved in:", output_dir, "\n\n")
+  
+  return(summary_stats)
+}
+
+# ====================================================================
+# BATCH PROCESSING
+# ====================================================================
+
+cat("========================================\n")
+cat("STARTING BATCH GO/KEGG ENRICHMENT\n")
+cat("========================================\n")
+
+all_summaries <- list()
+
+for (analysis_dir in ANALYSIS_DIRS) {
+  if (dir.exists(analysis_dir)) {
+    result <- run_enrichment_analysis(analysis_dir)
+    if (!is.null(result)) {
+      all_summaries[[analysis_dir]] <- result
+    }
+  } else {
+    cat("WARNING: Directory not found:", analysis_dir, "\n")
+  }
+}
+
+# ====================================================================
+# FINAL SUMMARY
+# ====================================================================
+
+if (length(all_summaries) > 0) {
+  
+  cat("\n========================================\n")
+  cat("BATCH PROCESSING COMPLETE!\n")
+  cat("========================================\n\n")
+  
+  summary_df <- bind_rows(all_summaries)
+  
+  cat("SUMMARY ACROSS ALL ANALYSES:\n")
+  print(summary_df)
+  cat("\n")
+  
+  write.csv(summary_df,
+            "GO_KEGG_enrichment_batch_summary.csv",
+            row.names = FALSE)
+  
+  cat("Results organized in each analysis directory:\n")
+  cat("  GO_KEGG_Enrichment_Results/\n")
+  cat("    ├── By_Functional_Category/\n")
+  cat("    │   ├── Performance_Enhancing_GO_BP.csv\n")
+  cat("    │   ├── Performance_Enhancing_KEGG.csv\n")
+  cat("    │   ├── Performance_Impairing_GO_BP.csv\n")
+  cat("    │   └── Performance_Impairing_KEGG.csv\n")
+  cat("    ├── By_CellType/\n")
+  cat("    │   └── [CellType]/\n")
+  cat("    │       ├── Performance_Enhancing_GO_BP.csv\n")
+  cat("    │       └── Performance_Enhancing_KEGG.csv\n")
+  cat("    ├── By_Task/\n")
+  cat("    │   └── [Task]/\n")
+  cat("    │       ├── Performance_Enhancing_GO_BP.csv\n")
+  cat("    │       └── Performance_Enhancing_KEGG.csv\n")
+  cat("    └── By_Response_Type/\n")
+  cat("        └── [Response]/\n")
+  cat("            ├── Performance_Enhancing_GO_BP.csv\n")
+  cat("            └── Performance_Enhancing_KEGG.csv\n\n")
+  
+  cat("========================================\n")
+  cat("Next steps:\n")
+  cat("  1. Review enrichment results by category\n")
+  cat("  2. Compare Enhancing vs Impairing pathways\n")
+  cat("  3. Identify cell-type specific pathways\n")
+  cat("  4. Look for task-specific mechanisms\n")
+  cat("  5. Create visualizations of top pathways\n")
+  cat("========================================\n")
+}
