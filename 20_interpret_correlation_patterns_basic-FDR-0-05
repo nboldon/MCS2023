@@ -1,0 +1,626 @@
+# ====================================================================
+# PEARSON CORRELATION INTERPRETATION SCRIPT
+# Categorizes gene-behavior correlations by functional impact
+# Distinguishes performance-enhancing from performance-impairing patterns
+# ====================================================================
+
+library(tidyverse)
+library(viridis)
+library(ggplot2)
+library(pheatmap)
+library(gridExtra)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+# Input directory (from your correlation analysis)
+INPUT_DIR <- "rescue_behavior_correlations_basic_FDR-0-05_TASK_SPECIFIC"
+
+# Output directory for interpretation results
+OUTPUT_DIR <- file.path(INPUT_DIR, "Correlation_Interpretations")
+
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+cat("========================================\n")
+cat("CORRELATION PATTERN INTERPRETATION\n")
+cat("========================================\n")
+cat("Input directory:", INPUT_DIR, "\n")
+cat("Output directory:", OUTPUT_DIR, "\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# LOAD DATA
+# ====================================================================
+
+cat("Loading correlation data...\n")
+
+# Load all significant correlations
+sig_file <- file.path(INPUT_DIR, "all_celltypes_significant_correlations.csv")
+all_file <- file.path(INPUT_DIR, "all_celltypes_all_correlations.csv")
+
+if (!file.exists(sig_file)) {
+  stop("Error: Significant correlations file not found at: ", sig_file)
+}
+
+sig_correlations <- read.csv(sig_file, stringsAsFactors = FALSE)
+cat("✓ Loaded", nrow(sig_correlations), "significant correlations\n")
+
+# Optionally load all correlations for context
+if (file.exists(all_file)) {
+  all_correlations <- read.csv(all_file, stringsAsFactors = FALSE)
+  cat("✓ Loaded", nrow(all_correlations), "total correlations (for context)\n")
+} else {
+  all_correlations <- NULL
+  cat("Note: All correlations file not found (optional)\n")
+}
+
+cat("\n")
+
+# ====================================================================
+# CATEGORIZE CORRELATIONS BY FUNCTIONAL IMPACT
+# ====================================================================
+
+cat("Categorizing correlations by functional impact...\n")
+
+sig_correlations <- sig_correlations %>%
+  mutate(
+    # Determine if correlation represents enhancement or impairment
+    Functional_Category = case_when(
+      # Performance-enhancing patterns
+      Response == "Correct_Response" & Pearson_r > 0 ~ "Performance_Enhancing",
+      Response %in% c("Premature_Response", "Missed_Response_Window", "Wrong_Choice") & 
+        Pearson_r < 0 ~ "Performance_Enhancing",
+      
+      # Performance-impairing patterns
+      Response == "Correct_Response" & Pearson_r < 0 ~ "Performance_Impairing",
+      Response %in% c("Premature_Response", "Missed_Response_Window", "Wrong_Choice") & 
+        Pearson_r > 0 ~ "Performance_Impairing",
+      
+      TRUE ~ "Unknown"
+    ),
+    
+    # Specific behavioral domain affected
+    Behavioral_Domain = case_when(
+      Response == "Premature_Response" ~ "Impulsivity_Control",
+      Response == "Missed_Response_Window" ~ "Attention_Motivation",
+      Response == "Wrong_Choice" ~ "Decision_Making",
+      Response == "Correct_Response" ~ "Overall_Performance",
+      TRUE ~ "Other"
+    ),
+    
+    # Direction label for clarity
+    Correlation_Direction = ifelse(Pearson_r > 0, "Positive", "Negative"),
+    
+    # Absolute correlation strength
+    Abs_Pearson_r = abs(Pearson_r),
+    
+    # Strength category
+    Correlation_Strength = case_when(
+      Abs_Pearson_r >= 0.7 ~ "Strong",
+      Abs_Pearson_r >= 0.5 ~ "Moderate",
+      Abs_Pearson_r >= 0.3 ~ "Weak",
+      TRUE ~ "Very_Weak"
+    )
+  )
+
+# Save categorized results
+write.csv(sig_correlations, 
+          file.path(OUTPUT_DIR, "categorized_correlations.csv"),
+          row.names = FALSE)
+
+cat("✓ Correlations categorized and saved\n\n")
+
+# ====================================================================
+# SUMMARY 1: FUNCTIONAL CATEGORY BY CELL TYPE
+# ====================================================================
+
+cat("Creating functional category summaries...\n")
+
+functional_summary <- sig_correlations %>%
+  group_by(CellType, Functional_Category) %>%
+  summarise(
+    N_Genes = n_distinct(Gene),
+    N_Correlations = n(),
+    Avg_abs_r = mean(Abs_Pearson_r),
+    Median_FDR = median(FDR),
+    Strongest_r = Pearson_r[which.max(Abs_Pearson_r)],
+    .groups = 'drop'
+  ) %>%
+  arrange(CellType, desc(N_Genes))
+
+write.csv(functional_summary,
+          file.path(OUTPUT_DIR, "functional_category_by_celltype.csv"),
+          row.names = FALSE)
+
+cat("✓ Functional summary created\n")
+
+# Calculate balance scores
+balance_summary <- functional_summary %>%
+  select(CellType, Functional_Category, N_Genes) %>%
+  pivot_wider(names_from = Functional_Category, 
+              values_from = N_Genes, 
+              values_fill = 0) %>%
+  mutate(
+    Total_Genes = Performance_Enhancing + Performance_Impairing,
+    Balance_Score = (Performance_Enhancing - Performance_Impairing) / Total_Genes,
+    Net_Effect = Performance_Enhancing - Performance_Impairing
+  ) %>%
+  arrange(desc(Balance_Score))
+
+write.csv(balance_summary,
+          file.path(OUTPUT_DIR, "celltype_balance_scores.csv"),
+          row.names = FALSE)
+
+cat("✓ Balance scores calculated\n\n")
+
+# ====================================================================
+# SUMMARY 2: BEHAVIORAL DOMAIN SPECIFICITY
+# ====================================================================
+
+cat("Analyzing behavioral domain patterns...\n")
+
+domain_summary <- sig_correlations %>%
+  group_by(CellType, Behavioral_Domain, Functional_Category) %>%
+  summarise(
+    N_Genes = n_distinct(Gene),
+    N_Correlations = n(),
+    Avg_abs_r = mean(Abs_Pearson_r),
+    .groups = 'drop'
+  ) %>%
+  arrange(CellType, Behavioral_Domain, desc(N_Genes))
+
+write.csv(domain_summary,
+          file.path(OUTPUT_DIR, "behavioral_domain_summary.csv"),
+          row.names = FALSE)
+
+cat("✓ Behavioral domain summary created\n\n")
+
+# ====================================================================
+# SUMMARY 3: GENE CONSISTENCY ANALYSIS
+# ====================================================================
+
+cat("Analyzing gene consistency across correlations...\n")
+
+gene_consistency <- sig_correlations %>%
+  group_by(Gene, CellType) %>%
+  summarise(
+    N_Total_Correlations = n(),
+    N_Enhancing = sum(Functional_Category == "Performance_Enhancing"),
+    N_Impairing = sum(Functional_Category == "Performance_Impairing"),
+    N_Tasks = n_distinct(Task),
+    N_Responses = n_distinct(Response),
+    Avg_abs_r = mean(Abs_Pearson_r),
+    Min_FDR = min(FDR),
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    Consistency_Score = (N_Enhancing - N_Impairing) / N_Total_Correlations,
+    Pattern = case_when(
+      N_Enhancing > 0 & N_Impairing == 0 ~ "Consistently_Enhancing",
+      N_Impairing > 0 & N_Enhancing == 0 ~ "Consistently_Impairing",
+      TRUE ~ "Mixed_Effects"
+    )
+  ) %>%
+  arrange(desc(abs(Consistency_Score)), desc(N_Total_Correlations))
+
+write.csv(gene_consistency,
+          file.path(OUTPUT_DIR, "gene_consistency_scores.csv"),
+          row.names = FALSE)
+
+cat("✓ Gene consistency analysis complete\n")
+
+# Highlight most consistent genes
+top_consistent_enhancing <- gene_consistency %>%
+  filter(Pattern == "Consistently_Enhancing", N_Total_Correlations >= 2) %>%
+  head(20)
+
+top_consistent_impairing <- gene_consistency %>%
+  filter(Pattern == "Consistently_Impairing", N_Total_Correlations >= 2) %>%
+  head(20)
+
+write.csv(top_consistent_enhancing,
+          file.path(OUTPUT_DIR, "top_consistent_enhancing_genes.csv"),
+          row.names = FALSE)
+
+write.csv(top_consistent_impairing,
+          file.path(OUTPUT_DIR, "top_consistent_impairing_genes.csv"),
+          row.names = FALSE)
+
+cat("✓ Top consistent genes identified\n\n")
+
+# ====================================================================
+# SUMMARY 4: TASK-SPECIFIC PATTERNS
+# ====================================================================
+
+cat("Analyzing task-specific patterns...\n")
+
+task_patterns <- sig_correlations %>%
+  group_by(Task, Functional_Category, CellType) %>%
+  summarise(
+    N_Genes = n_distinct(Gene),
+    N_Correlations = n(),
+    Avg_abs_r = mean(Abs_Pearson_r),
+    .groups = 'drop'
+  ) %>%
+  arrange(Task, desc(N_Genes))
+
+write.csv(task_patterns,
+          file.path(OUTPUT_DIR, "task_specific_patterns.csv"),
+          row.names = FALSE)
+
+cat("✓ Task-specific patterns analyzed\n\n")
+
+# ====================================================================
+# VISUALIZATION 1: BALANCE PLOT BY CELL TYPE
+# ====================================================================
+
+cat("Creating visualizations...\n")
+
+p1 <- ggplot(balance_summary, 
+             aes(x = reorder(CellType, Balance_Score), y = Net_Effect)) +
+  geom_col(aes(fill = Balance_Score > 0), width = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray30") +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("TRUE" = "#1B9E77", "FALSE" = "#D95F02"),
+    labels = c("More Enhancing", "More Impairing"),
+    name = "Net Effect"
+  ) +
+  labs(
+    title = "Balance of Performance Effects by Cell Type",
+    subtitle = "Net effect = Enhancing genes - Impairing genes",
+    x = "Cell Type",
+    y = "Net Effect (# genes)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold", size = 14),
+    axis.text.y = element_text(size = 9)
+  )
+
+ggsave(file.path(OUTPUT_DIR, "celltype_balance_plot.pdf"),
+       p1, width = 10, height = 8)
+
+cat("  ✓ Balance plot created\n")
+
+# ====================================================================
+# VISUALIZATION 2: HEATMAP OF FUNCTIONAL CATEGORIES
+# ====================================================================
+
+# Prepare matrix for heatmap
+heatmap_data <- functional_summary %>%
+  select(CellType, Functional_Category, N_Genes) %>%
+  pivot_wider(names_from = Functional_Category, 
+              values_from = N_Genes, 
+              values_fill = 0)
+
+heatmap_matrix <- as.matrix(heatmap_data[, -1])
+rownames(heatmap_matrix) <- heatmap_data$CellType
+
+pdf(file.path(OUTPUT_DIR, "functional_category_heatmap.pdf"), 
+    width = 8, height = 10)
+pheatmap(
+  heatmap_matrix,
+  color = viridis(50),
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  main = "Functional Impact by Cell Type",
+  fontsize = 10,
+  fontsize_row = 8,
+  display_numbers = TRUE,
+  number_format = "%.0f"
+)
+dev.off()
+
+cat("  ✓ Functional category heatmap created\n")
+
+# ====================================================================
+# VISUALIZATION 3: BEHAVIORAL DOMAIN BREAKDOWN
+# ====================================================================
+
+domain_plot_data <- sig_correlations %>%
+  count(Behavioral_Domain, Functional_Category) %>%
+  group_by(Behavioral_Domain) %>%
+  mutate(Percentage = n / sum(n) * 100)
+
+p3 <- ggplot(domain_plot_data, 
+             aes(x = Behavioral_Domain, y = n, fill = Functional_Category)) +
+  geom_col(position = "dodge") +
+  scale_fill_manual(
+    values = c("Performance_Enhancing" = "#1B9E77", 
+               "Performance_Impairing" = "#D95F02"),
+    name = "Functional Category"
+  ) +
+  labs(
+    title = "Functional Impact by Behavioral Domain",
+    x = "Behavioral Domain",
+    y = "Number of Significant Correlations"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold")
+  )
+
+ggsave(file.path(OUTPUT_DIR, "behavioral_domain_breakdown.pdf"),
+       p3, width = 10, height = 7)
+
+cat("  ✓ Behavioral domain plot created\n")
+
+# ====================================================================
+# VISUALIZATION 4: RESPONSE TYPE PATTERNS
+# ====================================================================
+
+response_pattern <- sig_correlations %>%
+  group_by(Response, Correlation_Direction, CellType) %>%
+  summarise(N_Genes = n_distinct(Gene), .groups = 'drop')
+
+p4 <- ggplot(response_pattern, 
+             aes(x = Response, y = CellType, fill = N_Genes)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  facet_wrap(~Correlation_Direction, ncol = 2) +
+  scale_fill_viridis_c(option = "plasma", name = "# Genes") +
+  labs(
+    title = "Gene-Behavior Correlations by Response Type",
+    subtitle = "Positive = more of that response; Negative = less of that response",
+    x = "Response Type",
+    y = "Cell Type"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 7),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold")
+  )
+
+ggsave(file.path(OUTPUT_DIR, "response_type_pattern_heatmap.pdf"),
+       p4, width = 12, height = 10)
+
+cat("  ✓ Response type heatmap created\n")
+
+# ====================================================================
+# VISUALIZATION 5: CORRELATION STRENGTH DISTRIBUTION
+# ====================================================================
+
+p5 <- ggplot(sig_correlations, 
+             aes(x = Abs_Pearson_r, fill = Functional_Category)) +
+  geom_histogram(bins = 30, alpha = 0.7, position = "identity") +
+  facet_wrap(~Functional_Category, ncol = 1) +
+  scale_fill_manual(
+    values = c("Performance_Enhancing" = "#1B9E77", 
+               "Performance_Impairing" = "#D95F02")
+  ) +
+  labs(
+    title = "Distribution of Correlation Strengths",
+    x = "Absolute Pearson r",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold")
+  )
+
+ggsave(file.path(OUTPUT_DIR, "correlation_strength_distribution.pdf"),
+       p5, width = 10, height = 8)
+
+cat("  ✓ Correlation strength distribution created\n\n")
+
+# ====================================================================
+# DETAILED REPORT: TOP FINDINGS
+# ====================================================================
+
+cat("Generating detailed report...\n")
+
+sink(file.path(OUTPUT_DIR, "interpretation_report.txt"))
+
+cat("========================================\n")
+cat("CORRELATION INTERPRETATION REPORT\n")
+cat("========================================\n\n")
+
+cat("OVERVIEW\n")
+cat("--------\n")
+cat("Total significant correlations:", nrow(sig_correlations), "\n")
+cat("Performance-enhancing:", sum(sig_correlations$Functional_Category == "Performance_Enhancing"), "\n")
+cat("Performance-impairing:", sum(sig_correlations$Functional_Category == "Performance_Impairing"), "\n")
+cat("Unique genes:", n_distinct(sig_correlations$Gene), "\n")
+cat("Cell types:", n_distinct(sig_correlations$CellType), "\n")
+cat("Tasks:", paste(unique(sig_correlations$Task), collapse = ", "), "\n\n")
+
+cat("========================================\n")
+cat("TOP 10 CELL TYPES BY NET PERFORMANCE EFFECT\n")
+cat("========================================\n")
+cat("(Positive = more enhancing genes; Negative = more impairing genes)\n\n")
+print(head(balance_summary %>% select(CellType, Performance_Enhancing, 
+                                      Performance_Impairing, Net_Effect, Balance_Score), 10))
+cat("\n\n")
+
+cat("========================================\n")
+cat("TOP 15 CONSISTENTLY ENHANCING GENES\n")
+cat("========================================\n")
+cat("(Genes that only show performance-enhancing effects)\n\n")
+if (nrow(top_consistent_enhancing) > 0) {
+  print(head(top_consistent_enhancing %>% 
+               select(Gene, CellType, N_Total_Correlations, N_Tasks, Avg_abs_r, Min_FDR), 15))
+} else {
+  cat("None found\n")
+}
+cat("\n\n")
+
+cat("========================================\n")
+cat("TOP 15 CONSISTENTLY IMPAIRING GENES\n")
+cat("========================================\n")
+cat("(Genes that only show performance-impairing effects)\n\n")
+if (nrow(top_consistent_impairing) > 0) {
+  print(head(top_consistent_impairing %>% 
+               select(Gene, CellType, N_Total_Correlations, N_Tasks, Avg_abs_r, Min_FDR), 15))
+} else {
+  cat("None found\n")
+}
+cat("\n\n")
+
+cat("========================================\n")
+cat("BEHAVIORAL DOMAIN BREAKDOWN\n")
+cat("========================================\n\n")
+domain_breakdown <- sig_correlations %>%
+  group_by(Behavioral_Domain, Functional_Category) %>%
+  summarise(N = n(), .groups = 'drop') %>%
+  pivot_wider(names_from = Functional_Category, values_from = N, values_fill = 0)
+print(domain_breakdown)
+cat("\n\n")
+
+cat("========================================\n")
+cat("TASK-SPECIFIC SUMMARY\n")
+cat("========================================\n\n")
+task_summary <- sig_correlations %>%
+  group_by(Task, Functional_Category) %>%
+  summarise(
+    N_Genes = n_distinct(Gene),
+    N_CellTypes = n_distinct(CellType),
+    .groups = 'drop'
+  ) %>%
+  pivot_wider(names_from = Functional_Category, values_from = N_Genes, values_fill = 0)
+print(task_summary)
+cat("\n\n")
+
+cat("========================================\n")
+cat("KEY INTERPRETATIONS\n")
+cat("========================================\n\n")
+
+cat("1. PERFORMANCE-ENHANCING CORRELATIONS:\n")
+cat("   - Positive correlation with Correct_Response\n")
+cat("   - Negative correlation with error responses\n")
+cat("   → Higher gene expression = better performance\n\n")
+
+cat("2. PERFORMANCE-IMPAIRING CORRELATIONS:\n")
+cat("   - Negative correlation with Correct_Response\n")
+cat("   - Positive correlation with error responses\n")
+cat("   → Higher gene expression = worse performance\n\n")
+
+cat("3. BEHAVIORAL DOMAINS:\n")
+cat("   - Impulsivity_Control: genes affecting premature responses\n")
+cat("   - Attention_Motivation: genes affecting missed responses\n")
+cat("   - Decision_Making: genes affecting wrong choices\n")
+cat("   - Overall_Performance: genes affecting correct responses\n\n")
+
+sink()
+
+cat("✓ Detailed report generated\n\n")
+
+# ====================================================================
+# CREATE GENE LISTS FOR DOWNSTREAM ANALYSIS
+# ====================================================================
+
+cat("Creating gene lists for downstream analysis...\n")
+
+# Performance-enhancing genes by cell type
+enhancing_genes <- sig_correlations %>%
+  filter(Functional_Category == "Performance_Enhancing") %>%
+  group_by(CellType) %>%
+  summarise(Genes = list(unique(Gene)), .groups = 'drop')
+
+# Performance-impairing genes by cell type
+impairing_genes <- sig_correlations %>%
+  filter(Functional_Category == "Performance_Impairing") %>%
+  group_by(CellType) %>%
+  summarise(Genes = list(unique(Gene)), .groups = 'drop')
+
+# Save gene lists
+gene_lists_dir <- file.path(OUTPUT_DIR, "Gene_Lists")
+if (!dir.exists(gene_lists_dir)) dir.create(gene_lists_dir)
+
+for (i in 1:nrow(enhancing_genes)) {
+  cell_type <- enhancing_genes$CellType[i]
+  genes <- unlist(enhancing_genes$Genes[i])
+  write.table(genes, 
+              file.path(gene_lists_dir, paste0(cell_type, "_enhancing_genes.txt")),
+              row.names = FALSE, col.names = FALSE, quote = FALSE)
+}
+
+for (i in 1:nrow(impairing_genes)) {
+  cell_type <- impairing_genes$CellType[i]
+  genes <- unlist(impairing_genes$Genes[i])
+  write.table(genes, 
+              file.path(gene_lists_dir, paste0(cell_type, "_impairing_genes.txt")),
+              row.names = FALSE, col.names = FALSE, quote = FALSE)
+}
+
+cat("✓ Gene lists saved to:", gene_lists_dir, "\n\n")
+
+# ====================================================================
+# FINAL SUMMARY
+# ====================================================================
+
+cat("========================================\n")
+cat("INTERPRETATION ANALYSIS COMPLETE!\n")
+cat("========================================\n")
+cat("Results saved in:", OUTPUT_DIR, "\n\n")
+
+cat("FILES CREATED:\n")
+cat("  SUMMARY TABLES:\n")
+cat("    - categorized_correlations.csv (all correlations with categories)\n")
+cat("    - functional_category_by_celltype.csv\n")
+cat("    - celltype_balance_scores.csv\n")
+cat("    - behavioral_domain_summary.csv\n")
+cat("    - gene_consistency_scores.csv\n")
+cat("    - top_consistent_enhancing_genes.csv\n")
+cat("    - top_consistent_impairing_genes.csv\n")
+cat("    - task_specific_patterns.csv\n\n")
+
+cat("  VISUALIZATIONS:\n")
+cat("    - celltype_balance_plot.pdf\n")
+cat("    - functional_category_heatmap.pdf\n")
+cat("    - behavioral_domain_breakdown.pdf\n")
+cat("    - response_type_pattern_heatmap.pdf\n")
+cat("    - correlation_strength_distribution.pdf\n\n")
+
+cat("  REPORTS:\n")
+cat("    - interpretation_report.txt (detailed text report)\n\n")
+
+cat("  GENE LISTS:\n")
+cat("    - Gene_Lists/ (performance-enhancing and impairing genes by cell type)\n\n")
+
+cat("========================================\n")
+cat("KEY INSIGHTS:\n")
+cat("========================================\n")
+
+# Quick summary stats
+n_enhancing <- sum(sig_correlations$Functional_Category == "Performance_Enhancing")
+n_impairing <- sum(sig_correlations$Functional_Category == "Performance_Impairing")
+pct_enhancing <- round(100 * n_enhancing / nrow(sig_correlations), 1)
+pct_impairing <- round(100 * n_impairing / nrow(sig_correlations), 1)
+
+cat(sprintf("  - %.1f%% of correlations are performance-ENHANCING\n", pct_enhancing))
+cat(sprintf("  - %.1f%% of correlations are performance-IMPAIRING\n", pct_impairing))
+
+# Cell type with most enhancing
+top_enhancing_celltype <- balance_summary %>% 
+  arrange(desc(Performance_Enhancing)) %>% 
+  slice(1)
+cat(sprintf("  - Top enhancing cell type: %s (%d genes)\n", 
+            top_enhancing_celltype$CellType, 
+            as.integer(top_enhancing_celltype$Performance_Enhancing)))
+
+# Cell type with most impairing
+top_impairing_celltype <- balance_summary %>% 
+  arrange(desc(Performance_Impairing)) %>% 
+  slice(1)
+cat(sprintf("  - Top impairing cell type: %s (%d genes)\n", 
+            top_impairing_celltype$CellType, 
+            as.integer(top_impairing_celltype$Performance_Impairing)))
+
+cat("\n========================================\n")
+cat("Next steps:\n")
+cat("  1. Review the interpretation_report.txt for key findings\n")
+cat("  2. Examine balance_scores to identify cell types of interest\n")
+cat("  3. Use gene lists for GO enrichment or pathway analysis\n")
+cat("  4. Compare enhancing vs impairing gene pathways\n")
+cat("========================================\n")
