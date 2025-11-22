@@ -1,0 +1,479 @@
+# ====================================================================
+# PRESENTATION SUMMARY FIGURES
+# Creates overview visualizations showing patterns across all cell types
+# Perfect for presentation introduction slides
+# ====================================================================
+
+library(tidyverse)
+library(ggplot2)
+library(viridis)
+library(RColorBrewer)
+library(patchwork)
+library(scales)
+library(ComplexHeatmap)
+library(circlize)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+TARGET_ANALYSIS <- "rescue_behavior_correlations_strong_FDR-0-05_TASK_SPECIFIC"
+INTERP_DIR <- file.path(TARGET_ANALYSIS, "Correlation_Interpretations")
+NEUROCOG_FILE <- "GO_KEGG_Enrichment_Results_TASK_SPECIFIC/Comparison_Analyses_Neurocognitive_ByCellType/all_neurocognitive_terms_by_celltype.csv"
+OUTPUT_DIR <- file.path(TARGET_ANALYSIS, "Presentation_Summary_Figures")
+
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+SCENARIO_FILTER <- "strong_FDR05"
+
+cat("========================================\n")
+cat("PRESENTATION SUMMARY FIGURES\n")
+cat("========================================\n")
+cat("Creating overview visualizations\n")
+cat("Output directory:", OUTPUT_DIR, "\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# LOAD DATA
+# ====================================================================
+
+cat("Loading data...\n")
+
+correlations_all <- read.csv(
+  file.path(INTERP_DIR, "categorized_correlations.csv"),
+  stringsAsFactors = FALSE
+)
+
+neurocog_terms <- read.csv(NEUROCOG_FILE, stringsAsFactors = FALSE) %>%
+  filter(Scenario == SCENARIO_FILTER)
+
+cat("✓ Data loaded\n\n")
+
+# ====================================================================
+# EXTRACT PATHWAY GENES FOR EACH CELL TYPE
+# ====================================================================
+
+cat("Extracting pathway genes...\n")
+
+# Function to extract genes from pathway gene lists
+extract_pathway_genes <- function(celltype, neurocog_df) {
+  pathway_data <- neurocog_df %>% filter(CellType == celltype)
+  
+  if (nrow(pathway_data) == 0) return(NULL)
+  
+  genes <- pathway_data %>%
+    pull(geneID) %>%
+    str_split("/") %>%
+    unlist() %>%
+    unique()
+  
+  return(list(
+    celltype = celltype,
+    n_pathways = nrow(pathway_data),
+    n_genes = length(genes),
+    genes = genes,
+    pathways = pathway_data
+  ))
+}
+
+# Get pathway info for all cell types
+cell_types <- unique(neurocog_terms$CellType)
+pathway_info_list <- lapply(cell_types, function(ct) {
+  extract_pathway_genes(ct, neurocog_terms)
+})
+names(pathway_info_list) <- cell_types
+
+cat("✓ Extracted pathway genes for", length(cell_types), "cell types\n\n")
+
+# ====================================================================
+# FIGURE 1: OVERVIEW BAR CHART
+# Cell types by number of pathways and genes
+# ====================================================================
+
+cat("Creating Figure 1: Overview bar chart...\n")
+
+# Prepare data
+overview_data <- data.frame(
+  CellType = character(),
+  N_Pathways = integer(),
+  N_Genes = integer(),
+  stringsAsFactors = FALSE
+)
+
+for (ct in names(pathway_info_list)) {
+  info <- pathway_info_list[[ct]]
+  if (!is.null(info)) {
+    overview_data <- rbind(overview_data, data.frame(
+      CellType = ct,
+      N_Pathways = info$n_pathways,
+      N_Genes = info$n_genes
+    ))
+  }
+}
+
+# Add cell type categories
+overview_data <- overview_data %>%
+  mutate(
+    Category = case_when(
+      grepl("Oligo", CellType) ~ "Oligodendrocytes",
+      grepl("Astro", CellType) ~ "Astrocytes",
+      grepl("Microglia", CellType) ~ "Microglia",
+      grepl("GABA", CellType) ~ "GABAergic",
+      grepl("Glut", CellType) ~ "Glutamatergic",
+      grepl("Endo", CellType) ~ "Endothelial",
+      TRUE ~ "Other"
+    )
+  )
+
+# Create long format for plotting
+overview_long <- overview_data %>%
+  pivot_longer(cols = c(N_Pathways, N_Genes),
+               names_to = "Metric",
+               values_to = "Count") %>%
+  mutate(Metric = ifelse(Metric == "N_Pathways", "Enriched Pathways", "Unique Genes"))
+
+# Plot
+p1 <- ggplot(overview_long, 
+             aes(x = reorder(CellType, Count), y = Count, fill = Category)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~Metric, scales = "free_x") +
+  scale_fill_brewer(palette = "Set2", name = "Cell Type Category") +
+  labs(
+    title = "Neurocognitive Enrichment Overview by Cell Type",
+    subtitle = paste0("Strong correlations (FDR < 0.05) - ", length(cell_types), " cell types analyzed"),
+    x = NULL,
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 11, hjust = 0.5),
+    axis.text.y = element_text(size = 9),
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold", size = 11)
+  )
+
+ggsave(
+  file.path(OUTPUT_DIR, "01_Overview_CellTypes_Pathways_Genes.pdf"),
+  p1, width = 12, height = 10, dpi = 300
+)
+
+cat("  ✓ Saved: 01_Overview_CellTypes_Pathways_Genes.pdf\n")
+
+# ====================================================================
+# FIGURE 2: BEHAVIORAL RESPONSE SUMMARY
+# Which responses are most common across pathway genes
+# ====================================================================
+
+cat("Creating Figure 2: Behavioral response summary...\n")
+
+# For each cell type, get behavioral responses for pathway genes
+behavior_summary <- data.frame(
+  CellType = character(),
+  Category = character(),
+  Response = character(),
+  Functional_Category = character(),
+  N_Genes = integer(),
+  stringsAsFactors = FALSE
+)
+
+for (ct in names(pathway_info_list)) {
+  info <- pathway_info_list[[ct]]
+  if (is.null(info)) next
+  
+  # Get category
+  category <- case_when(
+    grepl("Oligo", ct) ~ "Oligodendrocytes",
+    grepl("Astro", ct) ~ "Astrocytes",
+    grepl("Microglia", ct) ~ "Microglia",
+    grepl("GABA", ct) ~ "GABAergic",
+    grepl("Glut", ct) ~ "Glutamatergic",
+    grepl("Endo", ct) ~ "Endothelial",
+    TRUE ~ "Other"
+  )
+  
+  # Get correlations for pathway genes
+  pathway_corrs <- correlations_all %>%
+    filter(CellType == ct, Gene %in% info$genes)
+  
+  if (nrow(pathway_corrs) > 0) {
+    response_counts <- pathway_corrs %>%
+      group_by(Response, Functional_Category) %>%
+      summarise(N_Genes = n_distinct(Gene), .groups = 'drop') %>%
+      mutate(
+        CellType = ct,
+        Category = category
+      )
+    
+    behavior_summary <- rbind(behavior_summary, response_counts)
+  }
+}
+
+# Aggregate by category and response
+behavior_by_category <- behavior_summary %>%
+  group_by(Category, Response, Functional_Category) %>%
+  summarise(Total_Genes = sum(N_Genes), .groups = 'drop')
+
+# Plot
+p2 <- ggplot(behavior_by_category,
+             aes(x = Response, y = Total_Genes, fill = Functional_Category)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~Category, scales = "free_y") +
+  scale_fill_manual(
+    values = c("Performance_Enhancing" = "#1B9E77", "Performance_Impairing" = "#D95F02"),
+    name = NULL,
+    labels = c("Performance_Enhancing" = "Enhancing", "Performance_Impairing" = "Impairing")
+  ) +
+  labs(
+    title = "Behavioral Response Patterns Across Cell Type Categories",
+    subtitle = "Number of pathway genes correlating with each behavioral response",
+    x = NULL,
+    y = "Number of Pathway Genes"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 11, hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    legend.position = "bottom",
+    strip.text = element_text(face = "bold", size = 10)
+  )
+
+ggsave(
+  file.path(OUTPUT_DIR, "02_Behavioral_Responses_by_Category.pdf"),
+  p2, width = 14, height = 10, dpi = 300
+)
+
+cat("  ✓ Saved: 02_Behavioral_Responses_by_Category.pdf\n")
+
+# ====================================================================
+# FIGURE 3: NEUROCOGNITIVE CATEGORY HEATMAP
+# Shows which neurocognitive categories are enriched in which cell types
+# ====================================================================
+
+cat("Creating Figure 3: Neurocognitive category heatmap...\n")
+
+# Prepare heatmap data
+neuro_category_counts <- neurocog_terms %>%
+  group_by(CellType, Neurocognitive_Category) %>%
+  summarise(N_Terms = n(), .groups = 'drop')
+
+# Create matrix
+neuro_matrix <- neuro_category_counts %>%
+  pivot_wider(names_from = Neurocognitive_Category,
+              values_from = N_Terms,
+              values_fill = 0) %>%
+  column_to_rownames("CellType") %>%
+  as.matrix()
+
+# Create heatmap
+pdf(file.path(OUTPUT_DIR, "03_Neurocognitive_Categories_Heatmap.pdf"),
+    width = 10, height = 8)
+
+Heatmap(
+  neuro_matrix,
+  name = "# Terms",
+  col = colorRamp2(c(0, max(neuro_matrix)/2, max(neuro_matrix)), 
+                   c("white", "#FDE725", "#440154")),
+  cluster_rows = TRUE,
+  cluster_columns = TRUE,
+  show_row_names = TRUE,
+  show_column_names = TRUE,
+  row_names_gp = gpar(fontsize = 9),
+  column_names_gp = gpar(fontsize = 9),
+  column_names_rot = 45,
+  cell_fun = function(j, i, x, y, width, height, fill) {
+    if (neuro_matrix[i, j] > 0) {
+      grid.text(neuro_matrix[i, j], x, y, gp = gpar(fontsize = 8))
+    }
+  },
+  column_title = "Neurocognitive Category Enrichment by Cell Type",
+  row_title = "Cell Types",
+  heatmap_legend_param = list(
+    title = "Number of\nEnriched Terms",
+    direction = "vertical"
+  )
+)
+
+dev.off()
+
+cat("  ✓ Saved: 03_Neurocognitive_Categories_Heatmap.pdf\n")
+
+# ====================================================================
+# FIGURE 4: TOP PATHWAYS ACROSS CELL TYPES
+# Shows most frequently enriched pathways
+# ====================================================================
+
+cat("Creating Figure 4: Top pathways across cell types...\n")
+
+# Count pathway occurrences across cell types
+pathway_frequency <- neurocog_terms %>%
+  group_by(Description) %>%
+  summarise(
+    N_CellTypes = n_distinct(CellType),
+    Mean_FoldEnrichment = mean(FoldEnrichment, na.rm = TRUE),
+    Best_FDR = min(p.adjust, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(N_CellTypes), Best_FDR) %>%
+  head(20) %>%
+  mutate(
+    Description_short = ifelse(nchar(Description) > 50,
+                               paste0(substr(Description, 1, 47), "..."),
+                               Description),
+    NegLog10FDR = -log10(Best_FDR)
+  )
+
+p4 <- ggplot(pathway_frequency,
+             aes(x = N_CellTypes, 
+                 y = reorder(Description_short, N_CellTypes))) +
+  geom_point(aes(size = Mean_FoldEnrichment, color = NegLog10FDR)) +
+  scale_color_viridis_c(name = "Best -log10(FDR)", option = "plasma") +
+  scale_size_continuous(name = "Mean Fold\nEnrichment", range = c(3, 10)) +
+  labs(
+    title = "Most Frequently Enriched Pathways Across Cell Types",
+    subtitle = "Top 20 pathways by number of cell types",
+    x = "Number of Cell Types",
+    y = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 11, hjust = 0.5),
+    axis.text.y = element_text(size = 9),
+    legend.position = "right"
+  )
+
+ggsave(
+  file.path(OUTPUT_DIR, "04_Top_Pathways_Across_CellTypes.pdf"),
+  p4, width = 12, height = 9, dpi = 300
+)
+
+cat("  ✓ Saved: 04_Top_Pathways_Across_CellTypes.pdf\n")
+
+# ====================================================================
+# FIGURE 5: KEY CELL TYPES COMPARISON
+# Side-by-side comparison of most important cell types
+# ====================================================================
+
+cat("Creating Figure 5: Key cell types comparison...\n")
+
+# Select top cell types by number of pathways
+top_celltypes <- overview_data %>%
+  arrange(desc(N_Pathways)) %>%
+  head(6) %>%
+  pull(CellType)
+
+# Get top pathways for each
+comparison_data <- data.frame(
+  CellType = character(),
+  Pathway = character(),
+  FoldEnrichment = numeric(),
+  FDR = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (ct in top_celltypes) {
+  top_pathways <- neurocog_terms %>%
+    filter(CellType == ct) %>%
+    arrange(p.adjust) %>%
+    head(10) %>%
+    mutate(
+      Pathway_short = ifelse(nchar(Description) > 40,
+                            paste0(substr(Description, 1, 37), "..."),
+                            Description)
+    )
+  
+  comparison_data <- rbind(comparison_data, data.frame(
+    CellType = ct,
+    Pathway = top_pathways$Pathway_short,
+    FoldEnrichment = top_pathways$FoldEnrichment,
+    FDR = top_pathways$p.adjust
+  ))
+}
+
+p5 <- ggplot(comparison_data,
+             aes(x = FoldEnrichment, y = Pathway, color = -log10(FDR))) +
+  geom_point(size = 3) +
+  facet_wrap(~CellType, scales = "free_y", ncol = 2) +
+  scale_color_viridis_c(name = "-log10(FDR)", option = "plasma") +
+  labs(
+    title = "Top Enriched Pathways in Key Cell Types",
+    subtitle = "Top 6 cell types by number of enriched pathways",
+    x = "Fold Enrichment",
+    y = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+    plot.subtitle = element_text(size = 11, hjust = 0.5),
+    axis.text.y = element_text(size = 8),
+    strip.text = element_text(face = "bold", size = 10),
+    legend.position = "right"
+  )
+
+ggsave(
+  file.path(OUTPUT_DIR, "05_Key_CellTypes_Comparison.pdf"),
+  p5, width = 14, height = 12, dpi = 300
+)
+
+cat("  ✓ Saved: 05_Key_CellTypes_Comparison.pdf\n")
+
+# ====================================================================
+# FIGURE 6: SUMMARY STATISTICS TABLE (as image)
+# ====================================================================
+
+cat("Creating Figure 6: Summary statistics table...\n")
+
+# Create summary table
+summary_table <- overview_data %>%
+  arrange(desc(N_Pathways)) %>%
+  select(CellType, Category, N_Pathways, N_Genes) %>%
+  mutate(
+    CellType = gsub("_", " ", CellType),
+    `Genes per Pathway` = round(N_Genes / N_Pathways, 1)
+  ) %>%
+  rename(
+    `Cell Type` = CellType,
+    `Category` = Category,
+    `Enriched Pathways` = N_Pathways,
+    `Unique Genes` = N_Genes
+  )
+
+# Save as CSV
+write.csv(summary_table,
+          file.path(OUTPUT_DIR, "06_Summary_Statistics_Table.csv"),
+          row.names = FALSE)
+
+# Create visual table
+library(gridExtra)
+library(grid)
+
+pdf(file.path(OUTPUT_DIR, "06_Summary_Statistics_Table.pdf"),
+    width = 11, height = 8)
+
+grid.table(summary_table,
+           rows = NULL,
+           theme = ttheme_default(
+             base_size = 10,
+             core = list(fg_params = list(hjust = 0, x = 0.05)),
+             colhead = list(fg_params = list(fontface = "bold"))
+           ))
+
+grid.text("Summary Statistics by Cell Type",
+          y = 0.95,
+          gp = gpar(fontsize = 16, fontface = "bold"))
+
+grid.text(paste0("Strong correlations (FDR < 0.05) - ", 
+                nrow(summary_table), " cell types analyzed"),
+          y = 0.90,
+          gp = gpar(fontsize = 12))
+
+dev.off()
+
+cat("  ✓ Saved: 06_Summary_Statistics_Table.pdf\n")
