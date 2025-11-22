@@ -1,0 +1,727 @@
+# ====================================================================
+# VISUALIZE KEY GO/KEGG ENRICHMENT FINDINGS
+# Focus on most robust results from strong_FDR-0-05 analysis
+# Creates publication-quality figures for top findings
+# ====================================================================
+
+library(tidyverse)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(enrichplot)
+library(ggplot2)
+library(viridis)
+library(cowplot)
+library(RColorBrewer)
+
+# Explicitly load dplyr last to avoid namespace conflicts
+library(dplyr)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+# FOCUS ON MOST STRINGENT ANALYSIS
+TARGET_ANALYSIS <- "rescue_behavior_correlations_strong_FDR-0-05_TASK_SPECIFIC"
+
+# Paths
+INTERP_DIR <- file.path(TARGET_ANALYSIS, "Correlation_Interpretations")
+ENRICHMENT_DIR <- file.path(TARGET_ANALYSIS, "GO_KEGG_Enrichment_Results")
+OUTPUT_DIR <- file.path(TARGET_ANALYSIS, "Key_Pathway_Visualizations")
+
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+# Visualization parameters
+TOP_N_PATHWAYS <- 20  # Number of top pathways to show in plots
+TOP_N_CELLTYPES <- 20  # Top cell types to focus on
+TOP_N_GENES <- 50     # Top genes for focused analysis
+POINT_SIZE_RANGE <- c(3, 8)  # For dotplots
+
+cat("========================================\n")
+cat("KEY PATHWAY VISUALIZATION\n")
+cat("========================================\n")
+cat("Target analysis:", TARGET_ANALYSIS, "\n")
+cat("Output directory:", OUTPUT_DIR, "\n")
+cat("Top pathways to show:", TOP_N_PATHWAYS, "\n")
+cat("Note: Results filtered for neurocognitive relevance\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# LOAD INTERPRETATION RESULTS
+# ====================================================================
+
+cat("Loading interpretation results...\n")
+
+# Load categorized correlations
+correlations <- read.csv(
+  file.path(INTERP_DIR, "categorized_correlations.csv"),
+  stringsAsFactors = FALSE
+)
+
+# Load balance scores (cell types)
+balance_scores <- read.csv(
+  file.path(INTERP_DIR, "celltype_balance_scores.csv"),
+  stringsAsFactors = FALSE
+)
+
+# Load gene consistency
+gene_consistency <- read.csv(
+  file.path(INTERP_DIR, "gene_consistency_scores.csv"),
+  stringsAsFactors = FALSE
+)
+
+# Load top genes
+top_enhancing <- read.csv(
+  file.path(INTERP_DIR, "top_consistent_enhancing_genes.csv"),
+  stringsAsFactors = FALSE
+)
+
+top_impairing <- read.csv(
+  file.path(INTERP_DIR, "top_consistent_impairing_genes.csv"),
+  stringsAsFactors = FALSE
+)
+
+cat("✓ Interpretation data loaded\n\n")
+
+# ====================================================================
+# IDENTIFY KEY GROUPS FOR VISUALIZATION
+# ====================================================================
+
+cat("Identifying key groups for focused analysis...\n")
+
+# Top cell types by net effect (absolute value)
+top_celltypes <- balance_scores %>%
+  arrange(desc(abs(Net_Effect))) %>%
+  head(TOP_N_CELLTYPES) %>%
+  pull(CellType)
+
+cat("Top", TOP_N_CELLTYPES, "cell types by net effect:\n")
+for (ct in top_celltypes) {
+  cat("  -", ct, "\n")
+}
+
+# Top genes
+top_enhancing_genes <- head(top_enhancing$Gene, TOP_N_GENES)
+top_impairing_genes <- head(top_impairing$Gene, TOP_N_GENES)
+
+cat("\nTop", TOP_N_GENES, "consistently enhancing genes\n")
+cat("Top", TOP_N_GENES, "consistently impairing genes\n\n")
+
+# ====================================================================
+# UTILITY FUNCTIONS
+# ====================================================================
+
+#' Load and combine GO results
+load_go_results <- function(file_path) {
+  if (file.exists(file_path)) {
+    df <- read.csv(file_path, stringsAsFactors = FALSE)
+    if (nrow(df) > 0) {
+      return(df)
+    }
+  }
+  return(NULL)
+}
+
+#' Create comparative dotplot
+create_comparison_dotplot <- function(enhancing_df, impairing_df, 
+                                      title = "GO Enrichment Comparison",
+                                      top_n = TOP_N_PATHWAYS) {
+  
+  # Prepare data
+  if (!is.null(enhancing_df) && nrow(enhancing_df) > 0) {
+    enh <- enhancing_df %>%
+      head(top_n) %>%
+      mutate(Category = "Performance Enhancing",
+             NegLog10P = -log10(p.adjust))
+  } else {
+    enh <- NULL
+  }
+  
+  if (!is.null(impairing_df) && nrow(impairing_df) > 0) {
+    imp <- impairing_df %>%
+      head(top_n) %>%
+      mutate(Category = "Performance Impairing",
+             NegLog10P = -log10(p.adjust))
+  } else {
+    imp <- NULL
+  }
+  
+  combined <- bind_rows(enh, imp)
+  
+  if (is.null(combined) || nrow(combined) == 0) {
+    return(NULL)
+  }
+  
+  # Parse GeneRatio if it exists
+  if ("GeneRatio" %in% colnames(combined)) {
+    combined <- combined %>%
+      separate(GeneRatio, into = c("genes_in_term", "total_genes"), 
+               sep = "/", remove = FALSE, convert = TRUE) %>%
+      mutate(GeneRatio_numeric = genes_in_term / total_genes)
+  } else {
+    combined$GeneRatio_numeric <- combined$Count / 100  # Fallback
+  }
+  
+  # Shorten descriptions if too long
+  combined <- combined %>%
+    mutate(Description_short = ifelse(nchar(Description) > 60,
+                                     paste0(substr(Description, 1, 57), "..."),
+                                     Description))
+  
+  # Create plot
+  p <- ggplot(combined, 
+              aes(x = Category, y = reorder(Description_short, NegLog10P))) +
+    geom_point(aes(size = GeneRatio_numeric, color = NegLog10P)) +
+    scale_color_viridis_c(name = "-log10(FDR)", option = "plasma") +
+    scale_size_continuous(name = "Gene Ratio", range = POINT_SIZE_RANGE) +
+    labs(
+      title = title,
+      x = NULL,
+      y = NULL
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
+      axis.text.y = element_text(size = 9),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+      legend.position = "right",
+      panel.grid.major.y = element_line(color = "grey90"),
+      panel.grid.minor = element_blank()
+    )
+  
+  return(p)
+}
+
+#' Create pathway comparison heatmap
+create_pathway_heatmap <- function(pathway_list, title = "Pathway Enrichment") {
+  
+  if (length(pathway_list) == 0) {
+    return(NULL)
+  }
+  
+  # Combine all pathways
+  all_pathways <- bind_rows(pathway_list, .id = "Group")
+  
+  if (nrow(all_pathways) == 0) {
+    return(NULL)
+  }
+  
+  # Get top pathways by average significance
+  top_pathways <- all_pathways %>%
+    group_by(Description) %>%
+    summarise(Mean_NegLog10P = mean(-log10(p.adjust)), .groups = 'drop') %>%
+    arrange(desc(Mean_NegLog10P)) %>%
+    head(TOP_N_PATHWAYS) %>%
+    pull(Description)
+  
+  # Create matrix
+  heatmap_data <- all_pathways %>%
+    filter(Description %in% top_pathways) %>%
+    mutate(NegLog10P = -log10(p.adjust)) %>%
+    dplyr::select(Group, Description, NegLog10P) %>%
+    pivot_wider(names_from = Group, values_from = NegLog10P, values_fill = 0)
+  
+  # Convert to matrix
+  mat <- as.matrix(heatmap_data[, -1])
+  rownames(mat) <- heatmap_data$Description
+  
+  # Shorten row names
+  rownames(mat) <- ifelse(nchar(rownames(mat)) > 60,
+                          paste0(substr(rownames(mat), 1, 57), "..."),
+                          rownames(mat))
+  
+  return(mat)
+}
+
+# ====================================================================
+# VISUALIZATION 1: OVERALL FUNCTIONAL CATEGORIES
+# ====================================================================
+
+cat("------------------------------------------------------------------------\n")
+cat("VISUALIZATION 1: Overall Functional Categories\n")
+cat("------------------------------------------------------------------------\n\n")
+
+# Load overall functional category results
+enh_go <- load_go_results(
+  file.path(ENRICHMENT_DIR, "By_Functional_Category", 
+            "Performance_Enhancing_GO_BP.csv")
+)
+imp_go <- load_go_results(
+  file.path(ENRICHMENT_DIR, "By_Functional_Category", 
+            "Performance_Impairing_GO_BP.csv")
+)
+
+if (!is.null(enh_go) || !is.null(imp_go)) {
+  
+  p1 <- create_comparison_dotplot(
+    enh_go, imp_go,
+    title = "GO Biological Process: Performance Enhancing vs Impairing",
+    top_n = TOP_N_PATHWAYS
+  )
+  
+  if (!is.null(p1)) {
+    ggsave(
+      file.path(OUTPUT_DIR, "01_Overall_GO_BP_Comparison.pdf"),
+      p1, width = 12, height = 10, dpi = 300
+    )
+    cat("✓ Overall GO BP comparison created\n")
+  }
+} else {
+  cat("⚠ No overall GO BP results found\n")
+}
+
+# KEGG
+enh_kegg <- load_go_results(
+  file.path(ENRICHMENT_DIR, "By_Functional_Category", 
+            "Performance_Enhancing_KEGG.csv")
+)
+imp_kegg <- load_go_results(
+  file.path(ENRICHMENT_DIR, "By_Functional_Category", 
+            "Performance_Impairing_KEGG.csv")
+)
+
+if (!is.null(enh_kegg) || !is.null(imp_kegg)) {
+  
+  p2 <- create_comparison_dotplot(
+    enh_kegg, imp_kegg,
+    title = "KEGG Pathways: Performance Enhancing vs Impairing",
+    top_n = TOP_N_PATHWAYS
+  )
+  
+  if (!is.null(p2)) {
+    ggsave(
+      file.path(OUTPUT_DIR, "02_Overall_KEGG_Comparison.pdf"),
+      p2, width = 12, height = 10, dpi = 300
+    )
+    cat("✓ Overall KEGG comparison created\n")
+  }
+} else {
+  cat("⚠ No overall KEGG results found\n")
+}
+
+cat("\n")
+
+# ====================================================================
+# VISUALIZATION 2: TOP CELL TYPES
+# ====================================================================
+
+cat("------------------------------------------------------------------------\n")
+cat("VISUALIZATION 2: Top Cell Types by Net Effect\n")
+cat("------------------------------------------------------------------------\n\n")
+
+celltype_plots <- list()
+
+for (ct in top_celltypes) {
+  
+  cat("Processing:", ct, "\n")
+  
+  ct_dir <- file.path(ENRICHMENT_DIR, "By_CellType", ct)
+  
+  if (!dir.exists(ct_dir)) {
+    cat("  ⚠ Directory not found, skipping\n")
+    next
+  }
+  
+  # Load results
+  enh_go <- load_go_results(file.path(ct_dir, "Performance_Enhancing_GO_BP.csv"))
+  imp_go <- load_go_results(file.path(ct_dir, "Performance_Impairing_GO_BP.csv"))
+  
+  if (!is.null(enh_go) || !is.null(imp_go)) {
+    
+    p <- create_comparison_dotplot(
+      enh_go, imp_go,
+      title = paste("GO BP:", ct),
+      top_n = 10  # Fewer for individual cell types
+    )
+    
+    if (!is.null(p)) {
+      celltype_plots[[ct]] <- p
+      
+      ggsave(
+        file.path(OUTPUT_DIR, paste0("03_CellType_", gsub("[^A-Za-z0-9]", "_", ct), "_GO_BP.pdf")),
+        p, width = 12, height = 8, dpi = 300
+      )
+      cat("  ✓ Plot created\n")
+    }
+  } else {
+    cat("  ⚠ No results found\n")
+  }
+}
+
+cat("\n")
+
+# ====================================================================
+# VISUALIZATION 3: CELL TYPE COMPARISON HEATMAP
+# ====================================================================
+
+cat("------------------------------------------------------------------------\n")
+cat("VISUALIZATION 3: Cell Type Comparison Heatmap\n")
+cat("------------------------------------------------------------------------\n\n")
+
+# Collect enhancing pathways from all top cell types
+enhancing_pathways <- list()
+impairing_pathways <- list()
+
+for (ct in top_celltypes) {
+  ct_dir <- file.path(ENRICHMENT_DIR, "By_CellType", ct)
+  
+  enh <- load_go_results(file.path(ct_dir, "Performance_Enhancing_GO_BP.csv"))
+  if (!is.null(enh)) {
+    enhancing_pathways[[ct]] <- enh
+  }
+  
+  imp <- load_go_results(file.path(ct_dir, "Performance_Impairing_GO_BP.csv"))
+  if (!is.null(imp)) {
+    impairing_pathways[[ct]] <- imp
+  }
+}
+
+# Create heatmaps
+if (length(enhancing_pathways) > 1) {
+  mat_enh <- create_pathway_heatmap(
+    enhancing_pathways,
+    title = "Performance-Enhancing Pathways"
+  )
+  
+  if (!is.null(mat_enh)) {
+    library(pheatmap)
+    
+    pdf(file.path(OUTPUT_DIR, "04_CellType_Enhancing_Heatmap.pdf"), 
+        width = 10, height = 12)
+    pheatmap(
+      mat_enh,
+      color = viridis(100),
+      cluster_rows = TRUE,
+      cluster_cols = TRUE,
+      main = "Performance-Enhancing Pathways Across Top Cell Types",
+      fontsize = 9,
+      fontsize_row = 8,
+      angle_col = 45
+    )
+    dev.off()
+    cat("✓ Enhancing pathways heatmap created\n")
+  }
+}
+
+if (length(impairing_pathways) > 1) {
+  mat_imp <- create_pathway_heatmap(
+    impairing_pathways,
+    title = "Performance-Impairing Pathways"
+  )
+  
+  if (!is.null(mat_imp)) {
+    library(pheatmap)
+    
+    pdf(file.path(OUTPUT_DIR, "05_CellType_Impairing_Heatmap.pdf"), 
+        width = 10, height = 12)
+    pheatmap(
+      mat_imp,
+      color = viridis(100, option = "plasma"),
+      cluster_rows = TRUE,
+      cluster_cols = TRUE,
+      main = "Performance-Impairing Pathways Across Top Cell Types",
+      fontsize = 9,
+      fontsize_row = 8,
+      angle_col = 45
+    )
+    dev.off()
+    cat("✓ Impairing pathways heatmap created\n")
+  }
+}
+
+cat("\n")
+
+# ====================================================================
+# VISUALIZATION 4: TASK-SPECIFIC PATTERNS
+# ====================================================================
+
+cat("------------------------------------------------------------------------\n")
+cat("VISUALIZATION 4: Task-Specific Patterns\n")
+cat("------------------------------------------------------------------------\n\n")
+
+tasks <- c("TaskA", "TaskB", "TaskC", "TaskD")
+task_pathways_enh <- list()
+task_pathways_imp <- list()
+
+for (task in tasks) {
+  task_dir <- file.path(ENRICHMENT_DIR, "By_Task", task)
+  
+  if (!dir.exists(task_dir)) next
+  
+  enh <- load_go_results(file.path(task_dir, "Performance_Enhancing_GO_BP.csv"))
+  if (!is.null(enh)) {
+    task_pathways_enh[[task]] <- enh
+  }
+  
+  imp <- load_go_results(file.path(task_dir, "Performance_Impairing_GO_BP.csv"))
+  if (!is.null(imp)) {
+    task_pathways_imp[[task]] <- imp
+  }
+}
+
+# Create task comparison heatmap
+if (length(task_pathways_enh) > 1) {
+  mat_task_enh <- create_pathway_heatmap(
+    task_pathways_enh,
+    title = "Task-Specific Enhancing Pathways"
+  )
+  
+  if (!is.null(mat_task_enh)) {
+    library(pheatmap)
+    
+    pdf(file.path(OUTPUT_DIR, "06_Task_Enhancing_Heatmap.pdf"), 
+        width = 10, height = 12)
+    pheatmap(
+      mat_task_enh,
+      color = viridis(100),
+      cluster_rows = TRUE,
+      cluster_cols = TRUE,
+      main = "Performance-Enhancing Pathways Across Tasks",
+      fontsize = 10,
+      fontsize_row = 8
+    )
+    dev.off()
+    cat("✓ Task-specific enhancing heatmap created\n")
+  }
+}
+
+cat("\n")
+
+# ====================================================================
+# VISUALIZATION 5: RESPONSE TYPE COMPARISON
+# ====================================================================
+
+cat("------------------------------------------------------------------------\n")
+cat("VISUALIZATION 5: Response Type Comparison\n")
+cat("------------------------------------------------------------------------\n\n")
+
+responses <- c("Correct_Response", "Premature_Response", 
+               "Missed_Response_Window", "Wrong_Choice")
+
+for (response in responses) {
+  
+  resp_dir <- file.path(ENRICHMENT_DIR, "By_Response_Type", response)
+  
+  if (!dir.exists(resp_dir)) {
+    cat(response, "- directory not found\n")
+    next
+  }
+  
+  cat("Processing:", response, "\n")
+  
+  enh_go <- load_go_results(file.path(resp_dir, "Performance_Enhancing_GO_BP.csv"))
+  imp_go <- load_go_results(file.path(resp_dir, "Performance_Impairing_GO_BP.csv"))
+  
+  if (!is.null(enh_go) || !is.null(imp_go)) {
+    
+    p <- create_comparison_dotplot(
+      enh_go, imp_go,
+      title = paste("GO BP:", gsub("_", " ", response)),
+      top_n = 12
+    )
+    
+    if (!is.null(p)) {
+      ggsave(
+        file.path(OUTPUT_DIR, paste0("07_Response_", response, "_GO_BP.pdf")),
+        p, width = 12, height = 9, dpi = 300
+      )
+      cat("  ✓ Plot created\n")
+    }
+  } else {
+    cat("  ⚠ No results found\n")
+  }
+}
+
+cat("\n")
+
+# ====================================================================
+# VISUALIZATION 6: SUMMARY BARPLOT
+# ====================================================================
+
+cat("------------------------------------------------------------------------\n")
+cat("VISUALIZATION 6: Summary Statistics\n")
+cat("------------------------------------------------------------------------\n\n")
+
+# Count enriched pathways across categories
+summary_stats <- data.frame(
+  Category = character(),
+  N_Enhancing_Pathways = integer(),
+  N_Impairing_Pathways = integer(),
+  stringsAsFactors = FALSE
+)
+
+# Overall
+if (!is.null(enh_go)) {
+  n_enh <- nrow(enh_go)
+} else {
+  n_enh <- 0
+}
+if (!is.null(imp_go)) {
+  n_imp <- nrow(imp_go)
+} else {
+  n_imp <- 0
+}
+summary_stats <- rbind(summary_stats, 
+                       data.frame(Category = "Overall", 
+                                 N_Enhancing_Pathways = n_enh,
+                                 N_Impairing_Pathways = n_imp))
+
+# By cell type
+for (ct in top_celltypes) {
+  ct_dir <- file.path(ENRICHMENT_DIR, "By_CellType", ct)
+  enh <- load_go_results(file.path(ct_dir, "Performance_Enhancing_GO_BP.csv"))
+  imp <- load_go_results(file.path(ct_dir, "Performance_Impairing_GO_BP.csv"))
+  
+  summary_stats <- rbind(summary_stats,
+                        data.frame(Category = ct,
+                                  N_Enhancing_Pathways = ifelse(is.null(enh), 0, nrow(enh)),
+                                  N_Impairing_Pathways = ifelse(is.null(imp), 0, nrow(imp))))
+}
+
+# Save summary
+write.csv(summary_stats,
+          file.path(OUTPUT_DIR, "pathway_enrichment_summary.csv"),
+          row.names = FALSE)
+
+# Create barplot
+summary_long <- summary_stats %>%
+  pivot_longer(cols = c(N_Enhancing_Pathways, N_Impairing_Pathways),
+               names_to = "Type",
+               values_to = "Count") %>%
+  mutate(Type = gsub("N_", "", Type),
+         Type = gsub("_Pathways", "", Type))
+
+p_summary <- ggplot(summary_long, 
+                    aes(x = reorder(Category, -Count), y = Count, fill = Type)) +
+  geom_col(position = "dodge", width = 0.7) +
+  scale_fill_manual(
+    values = c("Enhancing" = "#1B9E77", "Impairing" = "#D95F02"),
+    name = "Pathway Type"
+  ) +
+  labs(
+    title = "Number of Significantly Enriched GO BP Pathways",
+    subtitle = paste("Analysis:", TARGET_ANALYSIS),
+    x = NULL,
+    y = "Number of Pathways"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.position = "bottom"
+  )
+
+ggsave(
+  file.path(OUTPUT_DIR, "08_Summary_Pathway_Counts.pdf"),
+  p_summary, width = 10, height = 7, dpi = 300
+)
+
+cat("✓ Summary statistics created\n\n")
+
+# ====================================================================
+# CREATE FIGURE LEGEND / README
+# ====================================================================
+
+cat("Creating figure descriptions...\n")
+
+sink(file.path(OUTPUT_DIR, "FIGURE_DESCRIPTIONS.txt"))
+
+cat("========================================\n")
+cat("KEY PATHWAY VISUALIZATION FIGURES\n")
+cat("Analysis:", TARGET_ANALYSIS, "\n")
+cat("========================================\n\n")
+
+cat("FIGURE 1: Overall GO BP Comparison\n")
+cat("File: 01_Overall_GO_BP_Comparison.pdf\n")
+cat("Description: Comparison of top GO Biological Process terms enriched in\n")
+cat("  performance-enhancing vs performance-impairing genes across all cell types.\n")
+cat("  Dot size = gene ratio, color = -log10(FDR)\n\n")
+
+cat("FIGURE 2: Overall KEGG Comparison\n")
+cat("File: 02_Overall_KEGG_Comparison.pdf\n")
+cat("Description: Comparison of top KEGG pathways enriched in\n")
+cat("  performance-enhancing vs performance-impairing genes.\n\n")
+
+cat("FIGURES 3: Top Cell Types\n")
+cat("Files: 03_CellType_*.pdf\n")
+cat("Description: Individual comparisons for the", TOP_N_CELLTYPES, "cell types with\n")
+cat("  largest net performance effects. Shows which pathways distinguish\n")
+cat("  enhancing from impairing genes in each cell type.\n\n")
+
+cat("FIGURE 4: Cell Type Enhancing Heatmap\n")
+cat("File: 04_CellType_Enhancing_Heatmap.pdf\n")
+cat("Description: Heatmap showing performance-enhancing pathways across top\n")
+cat("  cell types. Reveals shared vs cell-type-specific mechanisms.\n\n")
+
+cat("FIGURE 5: Cell Type Impairing Heatmap\n")
+cat("File: 05_CellType_Impairing_Heatmap.pdf\n")
+cat("Description: Heatmap showing performance-impairing pathways across top\n")
+cat("  cell types.\n\n")
+
+cat("FIGURE 6: Task-Specific Patterns\n")
+cat("File: 06_Task_Enhancing_Heatmap.pdf\n")
+cat("Description: Comparison of pathways across different behavioral tasks\n")
+cat("  (TaskA, B, C, D). Shows task-specific molecular mechanisms.\n\n")
+
+cat("FIGURES 7: Response Type Comparisons\n")
+cat("Files: 07_Response_*.pdf\n")
+cat("Description: Individual comparisons for each response type:\n")
+cat("  - Correct_Response: Overall performance\n")
+cat("  - Premature_Response: Impulsivity control\n")
+cat("  - Missed_Response_Window: Attention/motivation\n")
+cat("  - Wrong_Choice: Decision-making\n\n")
+
+cat("FIGURE 8: Summary Statistics\n")
+cat("File: 08_Summary_Pathway_Counts.pdf\n")
+cat("Description: Bar plot showing number of enriched pathways in each\n")
+cat("  category (overall and top cell types).\n\n")
+
+cat("========================================\n")
+cat("INTERPRETATION GUIDE\n")
+cat("========================================\n\n")
+
+cat("PERFORMANCE-ENHANCING pathways:\n")
+cat("  - Genes where ↑ expression = better behavioral performance\n")
+cat("  - For Correct_Response: positive correlation\n")
+cat("  - For errors: negative correlation (reduces errors)\n\n")
+
+cat("PERFORMANCE-IMPAIRING pathways:\n")
+cat("  - Genes where ↑ expression = worse behavioral performance\n")
+cat("  - For Correct_Response: negative correlation\n")
+cat("  - For errors: positive correlation (increases errors)\n\n")
+
+cat("KEY QUESTIONS TO ASK:\n")
+cat("  1. Which pathways are unique to enhancing vs impairing?\n")
+cat("  2. Do different cell types use different mechanisms?\n")
+cat("  3. Are there task-specific pathways?\n")
+cat("  4. Which response types share pathways?\n\n")
+
+sink()
+
+cat("✓ Figure descriptions created\n\n")
+
+# ====================================================================
+# FINAL SUMMARY
+# ====================================================================
+
+cat("========================================\n")
+cat("VISUALIZATION COMPLETE!\n")
+cat("========================================\n")
+cat("All figures saved in:", OUTPUT_DIR, "\n\n")
+
+cat("FILES CREATED:\n")
+cat("  01_Overall_GO_BP_Comparison.pdf\n")
+cat("  02_Overall_KEGG_Comparison.pdf\n")
+cat("  03_CellType_[Name]_GO_BP.pdf (for each top cell type)\n")
+cat("  04_CellType_Enhancing_Heatmap.pdf\n")
+cat("  05_CellType_Impairing_Heatmap.pdf\n")
+cat("  06_Task_Enhancing_Heatmap.pdf\n")
+cat("  07_Response_[Type]_GO_BP.pdf (for each response type)\n")
+cat("  08_Summary_Pathway_Counts.pdf\n")
+cat("  pathway_enrichment_summary.csv\n")
+cat("  FIGURE_DESCRIPTIONS.txt\n\n")
+
+
