@@ -1,0 +1,167 @@
+# ===============================================================
+# Combined GO & KEGG Dotplot for Presentation
+# ===============================================================
+
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(viridis)
+
+# ===============================================================
+# PREPARE COMBINED DATA
+# ===============================================================
+
+# Extract GO results (assuming go_bp object exists from your main script)
+if (!is.null(go_bp) && nrow(go_bp@result) > 0) {
+  go_data <- as.data.frame(go_bp@result) %>%
+    filter(!is.na(Description)) %>%
+    filter(p.adjust < 0.05) %>%  # Only significant terms
+    mutate(
+      Type = "GO Biological Process",
+      GeneRatio = sapply(strsplit(genes, ";"), length) / nrow(cluster_genes_data),
+      NegLog10P = -log10(p.adjust)
+    ) %>%
+    dplyr::select(Description, Count, p.adjust, GeneRatio, NegLog10P, Type)
+} else {
+  go_data <- data.frame()
+}
+
+# Extract KEGG results (assuming kegg object exists from your main script)
+if (!is.null(kegg) && nrow(kegg@result) > 0) {
+  kegg_data <- as.data.frame(kegg@result) %>%
+    filter(!is.na(Description)) %>%
+    filter(p.adjust < 0.047) %>%  # Stricter cutoff to exclude borderline results
+    mutate(
+      Description = gsub(" - Mus musculus \\(house mouse\\)", "", Description),  # Remove species suffix
+      Type = "KEGG Pathway",
+      GeneRatio = sapply(strsplit(genes, ";"), length) / nrow(cluster_genes_data),
+      NegLog10P = -log10(p.adjust)
+    ) %>%
+    dplyr::select(Description, Count, p.adjust, GeneRatio, NegLog10P, Type)
+} else {
+  kegg_data <- data.frame()
+}
+
+# Combine datasets
+combined_data <- bind_rows(go_data, kegg_data)
+
+# Reorder descriptions by significance within each type
+combined_data <- combined_data %>%
+  group_by(Type) %>%
+  arrange(p.adjust) %>%
+  ungroup() %>%
+  mutate(Description = factor(Description, levels = rev(unique(Description))))
+
+# ===============================================================
+# CREATE COMBINED DOTPLOT
+# ===============================================================
+
+p_combined <- ggplot(combined_data, 
+                     aes(x = GeneRatio, y = Description, 
+                         size = Count, color = p.adjust)) +
+  geom_point(alpha = 0.8) +
+  scale_color_viridis(option = "D", direction = -1, 
+                      name = "Adjusted\np-value",
+                      limits = c(0, 0.05)) +
+  scale_size_continuous(name = "Gene\nCount", range = c(3, 10)) +
+  facet_grid(Type ~ ., scales = "free_y", space = "free_y") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    axis.text.y = element_text(size = 11, color = "black"),
+    axis.text.x = element_text(size = 11, color = "black"),
+    axis.title.x = element_text(size = 13, face = "bold"),
+    strip.text = element_text(size = 12, face = "bold"),
+    strip.background = element_rect(fill = "grey90", color = NA),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.5),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    plot.margin = margin(10, 10, 10, 10)
+  ) +
+  labs(
+    title = "Enriched GO Terms and KEGG Pathways in Clustered Genes",
+    x = "Gene Ratio",
+    y = NULL
+  )
+
+# Save high-resolution version for presentation
+ggsave("Combined_GO_KEGG_dotplot_presentation.pdf", p_combined, 
+       width = 12, height = 8, dpi = 300)
+
+ggsave("Combined_GO_KEGG_dotplot_presentation.png", p_combined, 
+       width = 12, height = 8, dpi = 300)
+
+cat("✅ Combined dotplot saved as PDF and PNG\n")
+
+# ===============================================================
+# ALTERNATIVE: SINGLE PANEL VERSION (More compact)
+# ===============================================================
+
+# Add type prefix to description for single panel
+combined_data_single <- combined_data %>%
+  mutate(Description_labeled = paste0(
+    ifelse(Type == "GO Biological Process", "[GO] ", "[KEGG] "),
+    Description
+  )) %>%
+  mutate(Description_labeled = factor(Description_labeled, 
+                                      levels = rev(unique(Description_labeled))))
+
+p_single <- ggplot(combined_data_single, 
+                   aes(x = GeneRatio, y = Description_labeled, 
+                       size = Count, color = p.adjust, shape = Type)) +
+  geom_point(alpha = 0.8) +
+  scale_color_viridis(option = "D", direction = -1, 
+                      name = "Adjusted\np-value",
+                      limits = c(0, 0.05)) +
+  scale_size_continuous(name = "Gene\nCount", range = c(3, 10)) +
+  scale_shape_manual(values = c(16, 17), name = "Type") +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.text.x = element_text(size = 11, color = "black"),
+    axis.title.x = element_text(size = 13, face = "bold"),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.5),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    legend.title = element_text(size = 11, face = "bold"),
+    legend.text = element_text(size = 10),
+    plot.margin = margin(10, 10, 10, 10)
+  ) +
+  labs(
+    title = "Enriched GO Terms and KEGG Pathways in Clustered Genes",
+    x = "Gene Ratio",
+    y = NULL
+  )
+
+# Save single panel version
+ggsave("Combined_GO_KEGG_dotplot_single_panel.pdf", p_single, 
+       width = 12, height = 10, dpi = 300)
+
+ggsave("Combined_GO_KEGG_dotplot_single_panel.png", p_single, 
+       width = 12, height = 10, dpi = 300)
+
+cat("✅ Single-panel version also saved\n")
+
+# ===============================================================
+# SUMMARY TABLE FOR REFERENCE
+# ===============================================================
+
+summary_table <- combined_data %>%
+  arrange(Type, p.adjust) %>%
+  mutate(
+    `Adj. p-value` = formatC(p.adjust, format = "e", digits = 2),
+    `Gene Ratio` = round(GeneRatio, 3)
+  ) %>%
+  dplyr::select(Type, Description, Count, `Gene Ratio`, `Adj. p-value`)
+
+write.csv(summary_table, "Combined_GO_KEGG_summary_table.csv", row.names = FALSE)
+cat("✅ Summary table exported for reference\n")
+
+cat("\n📊 Visualization complete!\n")
+cat("   - Combined dotplot (faceted): Combined_GO_KEGG_dotplot_presentation.pdf/png\n")
+cat("   - Single panel version: Combined_GO_KEGG_dotplot_single_panel.pdf/png\n")
+cat("   - Summary table: Combined_GO_KEGG_summary_table.csv\n")
+
