@@ -1,0 +1,463 @@
+# ====================================================================
+# CELL TYPE-SPECIFIC PATHWAY VISUALIZATION - PATHWAY-GENE REFINED VERSION
+# Uses ONLY genes that appear in enriched pathways (not all correlated genes)
+# FOCUS: Strong correlations only (FDR < 0.05)
+# ====================================================================
+
+library(tidyverse)
+library(ggplot2)
+library(viridis)
+library(cowplot)
+library(RColorBrewer)
+library(patchwork)
+library(scales)
+
+# ====================================================================
+# CONFIGURATION
+# ====================================================================
+
+setwd("/Volumes/DataBox/MCS2023/Stats/Pearson_RescueGenes_Behavior")
+
+# Quick check to make sure files exist
+dir.exists("rescue_behavior_correlations_strong_FDR-0-05_TASK_SPECIFIC/GO_KEGG_Enrichment_Results/By_CellType")
+
+
+# Using strong correlations with FDR < 0.05
+TARGET_ANALYSIS <- "rescue_behavior_correlations_strong_FDR-0-05_TASK_SPECIFIC"
+
+# Paths
+INTERP_DIR <- file.path(TARGET_ANALYSIS, "Correlation_Interpretations")
+ENRICHMENT_DIR <- file.path(TARGET_ANALYSIS, "GO_KEGG_Enrichment_Results")
+NEUROCOG_FILE <- "GO_KEGG_Enrichment_Results_TASK_SPECIFIC/Comparison_Analyses_Neurocognitive_ByCellType/all_neurocognitive_terms_by_celltype.csv"
+OUTPUT_DIR <- file.path(TARGET_ANALYSIS, "CellType_Behavior_Figures_REFINED")
+
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+# Visualization parameters
+TOP_N_PATHWAYS <- 15
+SCENARIO_FILTER <- "strong_FDR05"  # Match your analysis
+
+cat("========================================\n")
+cat("PATHWAY-GENE REFINED VISUALIZATION\n")
+cat("========================================\n")
+cat("Target analysis:", TARGET_ANALYSIS, "\n")
+cat("Scenario filter:", SCENARIO_FILTER, "\n")
+cat("Output directory:", OUTPUT_DIR, "\n")
+cat("Using ONLY genes from enriched pathways\n")
+cat("========================================\n\n")
+
+# ====================================================================
+# LOAD DATA
+# ====================================================================
+
+cat("Loading data...\n")
+
+# Load all correlations
+correlations_all <- read.csv(
+  file.path(INTERP_DIR, "categorized_correlations.csv"),
+  stringsAsFactors = FALSE
+)
+
+cat("✓ Loaded", nrow(correlations_all), "total correlations\n")
+
+# Load neurocognitive terms (enriched pathways with genes)
+if (file.exists(NEUROCOG_FILE)) {
+  neurocog_terms <- read.csv(NEUROCOG_FILE, stringsAsFactors = FALSE)
+  cat("✓ Loaded", nrow(neurocog_terms), "enriched pathway terms\n")
+  
+  # Filter to strong_FDR05 scenario
+  neurocog_terms <- neurocog_terms %>%
+    filter(Scenario == SCENARIO_FILTER)
+  
+  cat("  Filtered to", nrow(neurocog_terms), "terms in", SCENARIO_FILTER, "\n")
+} else {
+  stop("ERROR: Cannot find neurocognitive terms file at: ", NEUROCOG_FILE)
+}
+
+
+# Get unique cell types from neurocognitive terms
+cell_types_with_enrichment <- unique(neurocog_terms$CellType)
+cat("\nCell types with enriched pathways:", length(cell_types_with_enrichment), "\n")
+for (ct in sort(cell_types_with_enrichment)) {
+  n_terms <- neurocog_terms %>% filter(CellType == ct) %>% nrow()
+  cat("  -", ct, "(", n_terms, "enriched terms )\n")
+}
+cat("\n")
+
+# Filtered to 372 terms in strong_FDR05 
+# Cell types with enriched pathways: 16
+
+
+# ====================================================================
+# EXTRACT GENES FROM ENRICHED PATHWAYS
+# ====================================================================
+
+#' Extract genes from pathway gene lists
+extract_genes_from_pathways <- function(pathway_df) {
+  # The geneID column contains gene names separated by "/"
+  all_genes <- pathway_df %>%
+    pull(geneID) %>%
+    str_split("/") %>%
+    unlist() %>%
+    unique()
+  
+  return(all_genes)
+}
+
+#' Get genes from enriched pathways for a cell type
+get_pathway_genes <- function(celltype, neurocog_df) {
+  
+  pathway_data <- neurocog_df %>%
+    filter(CellType == celltype)
+  
+  if (nrow(pathway_data) == 0) {
+    return(NULL)
+  }
+  
+  # Extract all unique genes from enriched pathways
+  genes <- extract_genes_from_pathways(pathway_data)
+  
+  return(list(
+    genes = genes,
+    n_pathways = nrow(pathway_data),
+    pathways = pathway_data
+  ))
+}
+
+# ====================================================================
+# GET BEHAVIORAL RESPONSES FOR PATHWAY GENES ONLY
+# ====================================================================
+
+#' Get behavioral responses for genes that are in enriched pathways
+get_pathway_gene_responses <- function(celltype, functional_cat, pathway_genes, correlations_df) {
+  
+  if (is.null(pathway_genes) || length(pathway_genes) == 0) {
+    return(NULL)
+  }
+  
+  # Filter to this cell type, functional category, AND genes in pathways
+  genes_df <- correlations_df %>%
+    filter(
+      CellType == celltype,
+      Functional_Category == functional_cat,
+      Gene %in% pathway_genes  # KEY FILTER: Only pathway genes
+    )
+  
+  if (nrow(genes_df) == 0) {
+    return(NULL)
+  }
+  
+  # Count by response type
+  response_counts <- genes_df %>%
+    group_by(Response) %>%
+    summarise(
+      N_Genes = n_distinct(Gene),
+      Mean_Correlation = mean(abs(Pearson_r), na.rm = TRUE),
+      .groups = 'drop'
+    ) %>%
+    arrange(desc(N_Genes))
+  
+  # Add task breakdown
+  task_counts <- genes_df %>%
+    group_by(Task) %>%
+    summarise(N_Genes = n_distinct(Gene), .groups = 'drop')
+  
+  return(list(
+    response = response_counts,
+    task = task_counts,
+    total_genes = n_distinct(genes_df$Gene)
+  ))
+}
+
+# ====================================================================
+# LOAD ENRICHMENT FILES FOR PATHWAY DISPLAY
+# ====================================================================
+
+#' Load GO enrichment results from individual cell type files
+load_go_results <- function(file_path) {
+  if (file.exists(file_path)) {
+    df <- read.csv(file_path, stringsAsFactors = FALSE)
+    if (nrow(df) > 0) {
+      return(df)
+    }
+  }
+  return(NULL)
+}
+
+# ====================================================================
+# CREATE FIGURES
+# ====================================================================
+
+#' Create combined figure for one cell type
+create_celltype_figure <- function(celltype, correlations_df, neurocog_df, enrichment_dir) {
+  
+  cat("\nProcessing:", celltype, "\n")
+  
+  # Get pathway genes for this cell type
+  pathway_info <- get_pathway_genes(celltype, neurocog_df)
+  
+  if (is.null(pathway_info)) {
+    cat("  ⚠ No enriched pathways found\n")
+    return(NULL)
+  }
+  
+  cat("  Found", pathway_info$n_pathways, "enriched pathways with", 
+      length(pathway_info$genes), "unique genes\n")
+  
+  # Get enrichment results for pathway display
+  ct_dir <- file.path(enrichment_dir, "By_CellType", celltype)
+  enh_go <- load_go_results(file.path(ct_dir, "Performance_Enhancing_GO_BP.csv"))
+  imp_go <- load_go_results(file.path(ct_dir, "Performance_Impairing_GO_BP.csv"))
+  
+  # Get behavioral responses for PATHWAY GENES ONLY
+  enh_behavior <- get_pathway_gene_responses(
+    celltype, "Performance_Enhancing", pathway_info$genes, correlations_df
+  )
+  imp_behavior <- get_pathway_gene_responses(
+    celltype, "Performance_Impairing", pathway_info$genes, correlations_df
+  )
+  
+  # Check if we have data
+  if (is.null(enh_go) && is.null(imp_go)) {
+    cat("  ⚠ No enrichment display files found\n")
+    return(NULL)
+  }
+  
+  # Create plots
+  plots <- list()
+  
+  # === PLOT A: Performance-Enhancing Pathways ===
+  if (!is.null(enh_go) && nrow(enh_go) > 0) {
+    
+    enh_go_top <- enh_go %>%
+      arrange(p.adjust) %>%
+      head(TOP_N_PATHWAYS) %>%
+      mutate(
+        NegLog10FDR = -log10(p.adjust),
+        Description_short = ifelse(nchar(Description) > 50,
+                                  paste0(substr(Description, 1, 47), "..."),
+                                  Description)
+      )
+    
+    # Parse GeneRatio
+    if ("GeneRatio" %in% colnames(enh_go_top)) {
+      enh_go_top <- enh_go_top %>%
+        separate(GeneRatio, into = c("genes_in_term", "total_genes"), 
+                 sep = "/", remove = FALSE, convert = TRUE) %>%
+        mutate(GeneRatio_numeric = genes_in_term / total_genes)
+    } else {
+      enh_go_top$GeneRatio_numeric <- enh_go_top$Count / 100
+    }
+    
+    p_enh_pathway <- ggplot(enh_go_top,
+                            aes(x = GeneRatio_numeric, 
+                                y = reorder(Description_short, -p.adjust))) +
+      geom_point(aes(size = Count, color = NegLog10FDR)) +
+      scale_color_viridis_c(name = "-log10(FDR)", option = "plasma", 
+                           begin = 0.2, end = 0.9) +
+      scale_size_continuous(name = "Gene Count", range = c(3, 10)) +
+      labs(title = "Performance-Enhancing Pathways",
+           subtitle = paste0("Pathway genes: n = ", ifelse(!is.null(enh_behavior), 
+                            enh_behavior$total_genes, 0)),
+           x = "Gene Ratio",
+           y = NULL) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(face = "bold", size = 12),
+        plot.subtitle = element_text(size = 10, color = "#1B9E77"),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(size = 9),
+        legend.position = "right",
+        panel.grid.major.y = element_line(color = "grey90"),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(color = "#1B9E77", fill = NA, size = 1)
+      )
+    
+    plots$enh_pathway <- p_enh_pathway
+  }
+  
+  # === PLOT B: Performance-Impairing Pathways ===
+  if (!is.null(imp_go) && nrow(imp_go) > 0) {
+    
+    imp_go_top <- imp_go %>%
+      arrange(p.adjust) %>%
+      head(TOP_N_PATHWAYS) %>%
+      mutate(
+        NegLog10FDR = -log10(p.adjust),
+        Description_short = ifelse(nchar(Description) > 50,
+                                  paste0(substr(Description, 1, 47), "..."),
+                                  Description)
+      )
+    
+    # Parse GeneRatio
+    if ("GeneRatio" %in% colnames(imp_go_top)) {
+      imp_go_top <- imp_go_top %>%
+        separate(GeneRatio, into = c("genes_in_term", "total_genes"), 
+                 sep = "/", remove = FALSE, convert = TRUE) %>%
+        mutate(GeneRatio_numeric = genes_in_term / total_genes)
+    } else {
+      imp_go_top$GeneRatio_numeric <- imp_go_top$Count / 100
+    }
+    
+    p_imp_pathway <- ggplot(imp_go_top,
+                            aes(x = GeneRatio_numeric, 
+                                y = reorder(Description_short, -p.adjust))) +
+      geom_point(aes(size = Count, color = NegLog10FDR)) +
+      scale_color_viridis_c(name = "-log10(FDR)", option = "plasma",
+                           begin = 0.2, end = 0.9) +
+      scale_size_continuous(name = "Gene Count", range = c(3, 10)) +
+      labs(title = "Performance-Impairing Pathways",
+           subtitle = paste0("Pathway genes: n = ", ifelse(!is.null(imp_behavior), 
+                            imp_behavior$total_genes, 0)),
+           x = "Gene Ratio",
+           y = NULL) +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(face = "bold", size = 12),
+        plot.subtitle = element_text(size = 10, color = "#D95F02"),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(size = 9),
+        legend.position = "right",
+        panel.grid.major.y = element_line(color = "grey90"),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(color = "#D95F02", fill = NA, size = 1)
+      )
+    
+    plots$imp_pathway <- p_imp_pathway
+  }
+  
+  # === PLOT C: Behavioral Responses (Enhancing - Pathway Genes Only) ===
+  if (!is.null(enh_behavior) && !is.null(enh_behavior$response)) {
+    
+    response_df <- enh_behavior$response %>%
+      mutate(Response_clean = gsub("_", " ", Response))
+    
+    p_enh_response <- ggplot(response_df,
+                             aes(x = reorder(Response_clean, N_Genes), 
+                                 y = N_Genes)) +
+      geom_col(fill = "#1B9E77", alpha = 0.8) +
+      geom_text(aes(label = N_Genes), hjust = -0.2, size = 3.5) +
+      coord_flip() +
+      labs(title = "Behavioral Responses",
+           subtitle = "Pathway Genes (Enhancing)",
+           x = NULL,
+           y = "Number of Genes") +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(face = "bold", size = 11),
+        plot.subtitle = element_text(size = 9, color = "#1B9E77"),
+        axis.text = element_text(size = 9),
+        panel.grid.major.y = element_blank(),
+        panel.border = element_rect(color = "#1B9E77", fill = NA, size = 1)
+      ) +
+      scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+    
+    plots$enh_response <- p_enh_response
+  }
+  
+  # === PLOT D: Behavioral Responses (Impairing - Pathway Genes Only) ===
+  if (!is.null(imp_behavior) && !is.null(imp_behavior$response)) {
+    
+    response_df <- imp_behavior$response %>%
+      mutate(Response_clean = gsub("_", " ", Response))
+    
+    p_imp_response <- ggplot(response_df,
+                             aes(x = reorder(Response_clean, N_Genes), 
+                                 y = N_Genes)) +
+      geom_col(fill = "#D95F02", alpha = 0.8) +
+      geom_text(aes(label = N_Genes), hjust = -0.2, size = 3.5) +
+      coord_flip() +
+      labs(title = "Behavioral Responses",
+           subtitle = "Pathway Genes (Impairing)",
+           x = NULL,
+           y = "Number of Genes") +
+      theme_minimal() +
+      theme(
+        plot.title = element_text(face = "bold", size = 11),
+        plot.subtitle = element_text(size = 9, color = "#D95F02"),
+        axis.text = element_text(size = 9),
+        panel.grid.major.y = element_blank(),
+        panel.border = element_rect(color = "#D95F02", fill = NA, size = 1)
+      ) +
+      scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+    
+    plots$imp_response <- p_imp_response
+  }
+  
+  # === Combine plots ===
+  if (length(plots) == 0) {
+    cat("  ⚠ No plots generated\n")
+    return(NULL)
+  }
+  
+  # Create layout based on what we have
+  if (length(plots) == 4) {
+    layout <- (plots$enh_pathway | plots$enh_response) /
+              (plots$imp_pathway | plots$imp_response)
+  } else if ("enh_pathway" %in% names(plots) && "enh_response" %in% names(plots)) {
+    layout <- plots$enh_pathway | plots$enh_response
+  } else if ("imp_pathway" %in% names(plots) && "imp_response" %in% names(plots)) {
+    layout <- plots$imp_pathway | plots$imp_response
+  } else if (length(plots) == 2) {
+    layout <- plots[[1]] | plots[[2]]
+  } else {
+    layout <- plots[[1]]
+  }
+  
+  # Add overall title
+  final_plot <- layout +
+    plot_annotation(
+      title = celltype,
+      subtitle = paste0("Pathway-Gene Refined Analysis (", SCENARIO_FILTER, ") - ",
+                       length(pathway_info$genes), " genes in ", 
+                       pathway_info$n_pathways, " enriched pathways"),
+      theme = theme(
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 11, hjust = 0.5, color = "grey30")
+      )
+    )
+  
+  cat("  ✓ Figure created with", length(plots), "panels\n")
+  
+  return(final_plot)
+}
+
+# ====================================================================
+# MAIN EXECUTION
+# ====================================================================
+
+cat("\n========================================\n")
+cat("CREATING REFINED FIGURES\n")
+cat("========================================\n")
+
+figures_created <- 0
+
+# Process each cell type that has enriched pathways
+for (celltype in cell_types_with_enrichment) {
+  
+  figure <- create_celltype_figure(
+    celltype = celltype,
+    correlations_df = correlations_all,
+    neurocog_df = neurocog_terms,
+    enrichment_dir = ENRICHMENT_DIR
+  )
+  
+  if (!is.null(figure)) {
+    
+    filename <- gsub("_", "-", celltype)
+    output_path <- file.path(OUTPUT_DIR, paste0(filename, "_REFINED.pdf"))
+    
+    ggsave(
+      output_path,
+      figure,
+      width = 16,
+      height = 10,
+      dpi = 300
+    )
+    
+    cat("  ✓ Saved:", basename(output_path), "\n")
+    figures_created <- figures_created + 1
+  }
+}
