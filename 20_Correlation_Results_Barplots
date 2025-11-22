@@ -1,0 +1,550 @@
+library(tidyverse)
+library(viridis)
+
+# Read your data
+data <- read_csv("all_neurocognitive_terms-strong-FDR-05.csv")
+
+# Prepare data with Task A = 0
+task_data <- data %>%
+  count(Task, name = "Enrichments") %>%
+  {if(!"TaskA" %in% .$Task) add_row(., Task = "TaskA", Enrichments = 0, .before = 1) else .} %>%
+  arrange(Task) %>%
+  mutate(
+    Label = case_when(
+      Task == "TaskA" ~ "Task A\n(Easy)",
+      Task == "TaskB" ~ "Task B\n(Moderate)",
+      Task == "TaskC" ~ "Task C\n(Hard)",
+      Task == "TaskD" ~ "Task D\n(Hardest)",
+      TRUE ~ Task
+    ),
+    Order = case_when(
+      Task == "TaskA" ~ 1,
+      Task == "TaskB" ~ 2,
+      Task == "TaskC" ~ 3,
+      Task == "TaskD" ~ 4,
+      TRUE ~ 5
+    ),
+    Group = ifelse(Task == "TaskA", "Baseline", "Enhanced")
+  ) %>%
+  arrange(Order) %>%
+  mutate(Label = factor(Label, levels = Label))
+
+# Print summary
+cat("\n=============================================================================\n")
+cat("Task Summary:\n")
+print(task_data %>% select(Task, Enrichments, Group))
+cat("\nTotal enrichments:", sum(task_data$Enrichments), "\n")
+cat("=============================================================================\n\n")
+
+# =============================================================================
+# Create plot with BETTER COLORS and FIXED ARROW
+# =============================================================================
+
+# Calculate y-position for arrow (above the tallest bar)
+max_enrichments <- max(task_data$Enrichments)
+arrow_y <- max_enrichments + 10  # 10 units above tallest bar
+arrow_text_y <- arrow_y + 3      # Text slightly above arrow
+
+p <- ggplot(task_data, aes(x = Label, y = Enrichments)) +
+  
+  # Bars with WIDER viridis range for more color variation
+  geom_col(aes(fill = Order), width = 0.7, 
+           color = "black", linewidth = 1) +
+  
+  # OPTION 1: Viridis with more color range (purple → yellow)
+  scale_fill_viridis_c(option = "viridis", 
+                       begin = 0.0,    # Start at darkest purple
+                       end = 0.95,     # End at brightest yellow
+                       direction = 1) +
+  
+  # Value labels on bars
+  geom_text(aes(label = Enrichments), 
+            vjust = -0.5, size = 7, fontface = "bold") +
+  
+  # Titles
+  labs(
+    title = "Choline Benefits Emerge Under Cognitive Challenge",
+    subtitle = "Gene-Behavior Correlations Increase with Task Difficulty",
+    x = NULL,
+    y = "Number of Significant\nGene Enrichments"
+  ) +
+  
+  # Theme
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5,
+                              margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 14, hjust = 0.5, 
+                                 color = "gray30", margin = margin(b = 15)),
+    axis.title.y = element_text(size = 16, face = "bold", 
+                                margin = margin(r = 10)),
+    axis.text.x = element_text(size = 14, face = "bold"),
+    axis.text.y = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3),
+    legend.position = "none",
+    plot.margin = margin(20, 20, 20, 20),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  
+  # Extend y-axis to make room for arrow ABOVE bars
+  scale_y_continuous(
+    limits = c(0, max_enrichments + 20),
+    breaks = seq(0, max_enrichments, 20),
+    expand = c(0, 0)
+  ) +
+  
+  # Task A annotation (baseline)
+  annotate("text", x = 1, y = max_enrichments * 0.75,
+           label = "No correlations\n(Baseline unaffected)",
+           size = 3.5, color = "gray40", 
+           fontface = "italic", lineheight = 0.9) +
+  
+  # Enhanced capacity ARROW (now above bars!)
+  annotate("segment",
+           x = 1.7, xend = 4.3,
+           y = arrow_y, yend = arrow_y,
+           arrow = arrow(length = unit(0.35, "cm"), ends = "both"),
+           color = "#FDE724FF", linewidth = 1.5) +  # Bright yellow from viridis
+  
+  # Enhanced capacity TEXT (above arrow)
+  annotate("text", x = 3, y = arrow_text_y,
+           label = "Enhanced Capacity",
+           size = 4.5, color = "#FDE724FF", fontface = "bold")
+
+# Display
+print(p)
+
+# =============================================================================
+# Save files
+# =============================================================================
+
+ggsave("defense_barchart_optimized.png", 
+       plot = p, width = 12, height = 7, dpi = 300, bg = "white")
+
+ggsave("defense_barchart_optimized_16x9.png", 
+       plot = p, width = 13.33, height = 7.5, dpi = 300, bg = "white")
+
+ggsave("defense_barchart_optimized.pdf", 
+       plot = p, width = 12, height = 7)
+
+
+# =============================================================================
+# CREATE ALTERNATIVE COLOR OPTIONS
+# =============================================================================
+
+cat("Creating alternative color schemes...\n\n")
+
+# OPTION 2: Plasma (purple → pink → orange)
+p_plasma <- p + 
+  scale_fill_viridis_c(option = "plasma", begin = 0.0, end = 0.95) +
+  annotate("segment", x = 1.7, xend = 4.3, y = arrow_y, yend = arrow_y,
+           arrow = arrow(length = unit(0.35, "cm"), ends = "both"),
+           color = "#FCFFA4FF", linewidth = 1.5) +
+  annotate("text", x = 3, y = arrow_text_y,
+           label = "Enhanced Capacity",
+           size = 4.5, color = "#FCFFA4FF", fontface = "bold")
+
+ggsave("defense_barchart_plasma.png", 
+       plot = p_plasma, width = 13.33, height = 7.5, dpi = 300, bg = "white")
+
+# OPTION 3: Inferno (dark → red → orange → yellow)
+p_inferno <- p + 
+  scale_fill_viridis_c(option = "inferno", begin = 0.0, end = 0.95) +
+  annotate("segment", x = 1.7, xend = 4.3, y = arrow_y, yend = arrow_y,
+           arrow = arrow(length = unit(0.35, "cm"), ends = "both"),
+           color = "#FCFEA4FF", linewidth = 1.5) +
+  annotate("text", x = 3, y = arrow_text_y,
+           label = "Enhanced Capacity",
+           size = 4.5, color = "#FCFEA4FF", fontface = "bold")
+
+ggsave("defense_barchart_inferno.png", 
+       plot = p_inferno, width = 13.33, height = 7.5, dpi = 300, bg = "white")
+
+# OPTION 4: Turbo (full rainbow)
+p_turbo <- p + 
+  scale_fill_viridis_c(option = "turbo", begin = 0.1, end = 0.9) +
+  annotate("segment", x = 1.7, xend = 4.3, y = arrow_y, yend = arrow_y,
+           arrow = arrow(length = unit(0.35, "cm"), ends = "both"),
+           color = "#FEA931FF", linewidth = 1.5) +
+  annotate("text", x = 3, y = arrow_text_y,
+           label = "Enhanced Capacity",
+           size = 4.5, color = "#FEA931FF", fontface = "bold")
+
+ggsave("defense_barchart_turbo.png", 
+       plot = p_turbo, width = 13.33, height = 7.5, dpi = 300, bg = "white")
+
+# OPTION 5: Custom colors - maximum variation
+custom_colors <- c(
+  "1" = "#440154FF",  # Dark purple (Task A)
+  "2" = "#3B528BFF",  # Blue (Task B)
+  "3" = "#21908CFF",  # Teal (Task C)
+  "4" = "#FDE724FF"   # Bright yellow (Task D)
+)
+
+p_custom <- ggplot(task_data, aes(x = Label, y = Enrichments)) +
+  geom_col(aes(fill = as.factor(Order)), width = 0.7, 
+           color = "black", linewidth = 1) +
+  scale_fill_manual(values = custom_colors) +
+  geom_text(aes(label = Enrichments), vjust = -0.5, size = 7, fontface = "bold") +
+  labs(
+    title = "Choline Benefits Emerge Under Cognitive Challenge",
+    subtitle = "Gene-Behavior Correlations Increase with Task Difficulty",
+    x = NULL,
+    y = "Number of Significant\nGene Enrichments"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 14, hjust = 0.5, color = "gray30", margin = margin(b = 15)),
+    axis.title.y = element_text(size = 16, face = "bold", margin = margin(r = 10)),
+    axis.text.x = element_text(size = 14, face = "bold"),
+    axis.text.y = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3),
+    legend.position = "none",
+    plot.margin = margin(20, 20, 20, 20),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  scale_y_continuous(limits = c(0, max_enrichments + 20), breaks = seq(0, max_enrichments, 20), expand = c(0, 0)) +
+  annotate("text", x = 1, y = max_enrichments * 0.75,
+           label = "No correlations\n(Baseline unaffected)",
+           size = 3.5, color = "gray40", fontface = "italic", lineheight = 0.9) +
+  annotate("segment", x = 1.7, xend = 4.3, y = arrow_y, yend = arrow_y,
+           arrow = arrow(length = unit(0.35, "cm"), ends = "both"),
+           color = "#440154FF", linewidth = 1.5) +
+  annotate("text", x = 3, y = arrow_text_y,
+           label = "Enhanced Capacity",
+           size = 4.5, color = "#440154FF", fontface = "bold")
+
+ggsave("defense_barchart_custom.png", 
+       plot = p_custom, width = 13.33, height = 7.5, dpi = 300, bg = "white")
+
+
+
+#####################################
+#####################################
+#####################################
+#####################################
+#####################################
+
+
+
+# =============================================================================
+# Bar Chart: Choline Benefits Emerge Under Cognitive Challenge
+# Task Difficulty vs. Gene-Behavior Correlations
+# =============================================================================
+
+# Load required libraries
+library(tidyverse)
+library(viridis)
+
+# Read the data
+# UPDATE THIS PATH to point to your CSV file location
+data <- read_csv("all_neurocognitive_terms-strong-FDR-05.csv")
+
+# Count enrichments by task
+task_counts <- data %>%
+  group_by(Task) %>%
+  summarise(count = n()) %>%
+  ungroup()
+
+# Add Task A with 0 count (since it's not in the data)
+task_counts <- bind_rows(
+  data.frame(Task = "TaskA", count = 0),
+  task_counts
+)
+
+# Create proper task labels and ordering
+task_counts <- task_counts %>%
+  mutate(
+    Task_Label = case_when(
+      Task == "TaskA" ~ "Task A\n(Easy)",
+      Task == "TaskB" ~ "Task B\n(Moderate)",
+      Task == "TaskC" ~ "Task C\n(Hard)",
+      Task == "TaskD" ~ "Task D\n(Hardest)",
+      TRUE ~ Task
+    ),
+    Task_Order = case_when(
+      Task == "TaskA" ~ 1,
+      Task == "TaskB" ~ 2,
+      Task == "TaskC" ~ 3,
+      Task == "TaskD" ~ 4,
+      TRUE ~ 5
+    ),
+    # Color coding: gray for Task A, viridis for others
+    Color_Group = ifelse(Task == "TaskA", "No Effect", "Enhanced Capacity")
+  ) %>%
+  arrange(Task_Order)
+
+# Print summary
+print("Task counts:")
+print(task_counts)
+cat("\nTotal enrichments (Tasks B-D):", sum(task_counts$count), "\n")
+
+# =============================================================================
+# Create the bar chart
+# =============================================================================
+
+p <- ggplot(task_counts, aes(x = reorder(Task_Label, Task_Order), y = count)) +
+  # Create bars with conditional coloring
+  geom_col(aes(fill = Color_Group), width = 0.7, color = "black", linewidth = 0.8) +
+  
+  # Use viridis for enhanced capacity, gray for no effect
+  scale_fill_manual(
+    values = c("No Effect" = "gray70", 
+               "Enhanced Capacity" = "#21908CFF") # viridis mid-range color
+  ) +
+  
+  # Labels and titles
+  labs(
+    title = "Choline Benefits Emerge Under Cognitive Challenge",
+    subtitle = "Gene-Behavior Correlations by Task Difficulty",
+    x = "",
+    y = "Number of Significant\nGene Enrichments"
+  ) +
+  
+  # Theme customization
+  theme_minimal(base_size = 16) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, 
+                              margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 15, hjust = 0.5, color = "gray30", 
+                                 margin = margin(b = 20)),
+    axis.title.y = element_text(size = 15, face = "bold", margin = margin(r = 12)),
+    axis.text.x = element_text(size = 14, face = "bold"),
+    axis.text.y = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.5),
+    legend.position = "none",
+    plot.margin = margin(25, 25, 25, 25),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  
+  # Add value labels on top of bars
+  geom_text(aes(label = count), vjust = -0.6, size = 6.5, fontface = "bold") +
+  
+  # Add annotations
+  annotate("text", x = 1, y = max(task_counts$count) * 0.88, 
+           label = "Baseline Function:\nNo Effect", 
+           size = 4, color = "gray40", fontface = "italic", lineheight = 0.9) +
+  
+  annotate("segment", x = 1.7, xend = 4.3, 
+           y = max(task_counts$count) * 0.78, yend = max(task_counts$count) * 0.78,
+           arrow = arrow(length = unit(0.35, "cm"), ends = "both"), 
+           color = "#21908CFF", linewidth = 1.2) +
+  
+  annotate("text", x = 3, y = max(task_counts$count) * 0.86, 
+           label = "Capacity Enhancement", 
+           size = 4.5, color = "#21908CFF", fontface = "bold") +
+  
+  # Extend y-axis for annotations
+  coord_cartesian(ylim = c(0, max(task_counts$count) * 1.05))
+
+# Display the plot
+print(p)
+
+# =============================================================================
+# Save the plots
+# =============================================================================
+
+# High-resolution PNG for presentations
+ggsave("task_difficulty_barchart.png", 
+       plot = p, width = 10, height = 7, dpi = 300, bg = "white")
+
+# PDF version for high-quality printing
+ggsave("task_difficulty_barchart.pdf", 
+       plot = p, width = 10, height = 7, device = "pdf")
+
+# PowerPoint-friendly version (16:9 aspect ratio)
+ggsave("task_difficulty_barchart_wide.png", 
+       plot = p, width = 12, height = 6.75, dpi = 300, bg = "white")
+
+cat("\n✓ Plots saved successfully!\n")
+cat("  - task_difficulty_barchart.png\n")
+cat("  - task_difficulty_barchart.pdf\n")
+cat("  - task_difficulty_barchart_wide.png (PowerPoint optimized)\n")
+
+
+# =============================================================================
+# ALTERNATIVE VERSION: Full viridis gradient across all bars
+# =============================================================================
+
+p_viridis <- ggplot(task_counts, aes(x = reorder(Task_Label, Task_Order), y = count)) +
+  geom_col(aes(fill = Task_Order), width = 0.7, color = "black", linewidth = 0.8) +
+  
+  # Apply viridis gradient across all tasks
+  scale_fill_viridis(option = "viridis", begin = 0.2, end = 0.95, direction = 1) +
+  
+  labs(
+    title = "Choline Benefits Emerge Under Cognitive Challenge",
+    subtitle = "Gene-Behavior Correlations by Task Difficulty",
+    x = "",
+    y = "Number of Significant\nGene Enrichments"
+  ) +
+  
+  theme_minimal(base_size = 16) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, 
+                              margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 15, hjust = 0.5, color = "gray30", 
+                                 margin = margin(b = 20)),
+    axis.title.y = element_text(size = 15, face = "bold", margin = margin(r = 12)),
+    axis.text.x = element_text(size = 14, face = "bold"),
+    axis.text.y = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.5),
+    legend.position = "none",
+    plot.margin = margin(25, 25, 25, 25),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  
+  geom_text(aes(label = count), vjust = -0.6, size = 6.5, fontface = "bold") +
+  
+  annotate("text", x = 1, y = max(task_counts$count) * 0.88, 
+           label = "Baseline:\nNo Effect", 
+           size = 4, color = "gray40", fontface = "italic", lineheight = 0.9) +
+  
+  annotate("segment", x = 1.7, xend = 4.3, 
+           y = max(task_counts$count) * 0.78, yend = max(task_counts$count) * 0.78,
+           arrow = arrow(length = unit(0.35, "cm"), ends = "both"), 
+           color = "darkgreen", linewidth = 1.2) +
+  
+  annotate("text", x = 3, y = max(task_counts$count) * 0.86, 
+           label = "Enhanced Capacity", 
+           size = 4.5, color = "darkgreen", fontface = "bold") +
+  
+  coord_cartesian(ylim = c(0, max(task_counts$count) * 1.05))
+
+# Save viridis gradient version
+ggsave("task_difficulty_barchart_viridis_gradient.png", 
+       plot = p_viridis, width = 10, height = 7, dpi = 300, bg = "white")
+
+ggsave("task_difficulty_barchart_viridis_gradient.pdf", 
+       plot = p_viridis, width = 10, height = 7, device = "pdf")
+
+cat("\n✓ Viridis gradient versions also saved!\n")
+cat("  - task_difficulty_barchart_viridis_gradient.png\n")
+cat("  - task_difficulty_barchart_viridis_gradient.pdf\n")
+
+# =============================================================================
+# BONUS: Create a version with custom viridis colors for each bar
+# =============================================================================
+
+# Define custom viridis colors for each task
+custom_colors <- c(
+  "TaskA" = "#440154FF",  # Dark purple (viridis low)
+  "TaskB" = "#31688EFF",  # Blue-green
+  "TaskC" = "#35B779FF",  # Green
+  "TaskD" = "#FDE724FF"   # Yellow (viridis high)
+)
+
+p_custom <- ggplot(task_counts, aes(x = reorder(Task_Label, Task_Order), y = count)) +
+  geom_col(aes(fill = Task), width = 0.7, color = "black", linewidth = 0.8) +
+  scale_fill_manual(values = custom_colors) +
+  
+  labs(
+    title = "Choline Benefits Emerge Under Cognitive Challenge",
+    subtitle = "Gene-Behavior Correlations by Task Difficulty",
+    x = "",
+    y = "Number of Significant\nGene Enrichments"
+  ) +
+  
+  theme_minimal(base_size = 16) +
+  theme(
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5, 
+                              margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 15, hjust = 0.5, color = "gray30", 
+                                 margin = margin(b = 20)),
+    axis.title.y = element_text(size = 15, face = "bold", margin = margin(r = 12)),
+    axis.text.x = element_text(size = 14, face = "bold"),
+    axis.text.y = element_text(size = 13),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.5),
+    legend.position = "none",
+    plot.margin = margin(25, 25, 25, 25),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  
+  geom_text(aes(label = count), vjust = -0.6, size = 6.5, fontface = "bold", 
+            color = "white") +  # White text on dark bars
+  
+  coord_cartesian(ylim = c(0, max(task_counts$count) * 1.05))
+
+# Save custom color version
+ggsave("task_difficulty_barchart_custom_viridis.png", 
+       plot = p_custom, width = 10, height = 7, dpi = 300, bg = "white")
+
+cat("\n✓ Custom viridis version saved!\n")
+cat("  - task_difficulty_barchart_custom_viridis.png\n")
+
+cat("\n=============================================================================\n")
+cat("All plots generated successfully! Choose your preferred version.\n")
+cat("=============================================================================\n")
+
+
+#######################################
+#######################################
+#######################################
+#######################################
+#######################################
+
+
+
+# =============================================================================
+# MINIMAL VERSION: Bar Chart for Task Difficulty
+# Clean and simple - perfect for presentations
+# =============================================================================
+
+library(tidyverse)
+library(viridis)
+
+# Read data
+data <- read_csv("all_neurocognitive_terms-strong-FDR-05.csv")
+
+# Prepare data
+task_data <- data %>%
+  count(Task, name = "count") %>%
+  add_row(Task = "TaskA", count = 0, .before = 1) %>%
+  mutate(
+    label = c("Task A\n(Easy)", "Task B\n(Moderate)", 
+              "Task C\n(Hard)", "Task D\n(Hardest)"),
+    order = 1:4
+  )
+
+# Create plot
+ggplot(task_data, aes(x = reorder(label, order), y = count, fill = order)) +
+  geom_col(width = 0.7, color = "black", linewidth = 0.8) +
+  scale_fill_viridis(option = "viridis", begin = 0.2, end = 0.9) +
+  geom_text(aes(label = count), vjust = -0.5, size = 7, fontface = "bold") +
+  labs(
+    title = "Choline Benefits Emerge Under Cognitive Challenge",
+    x = NULL,
+    y = "Significant Gene Enrichments"
+  ) +
+  theme_minimal(base_size = 18) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 20),
+    axis.text.x = element_text(face = "bold"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
+  ) +
+  ylim(0, 140)
+
+# Save
+ggsave("task_barchart_minimal.png", width = 10, height = 6, dpi = 300, bg = "white")
+ggsave("task_barchart_minimal.pdf", width = 10, height = 6)
+
+cat("✓ Minimal version saved!\n")
+
